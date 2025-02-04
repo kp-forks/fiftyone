@@ -1,19 +1,17 @@
 """
 Package-wide constants.
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
+
 from datetime import datetime
 import os
 
 from packaging.version import Version
 
-try:
-    from importlib.metadata import metadata  # Python 3.8
-except ImportError:
-    from importlib_metadata import metadata  # Python < 3.8
+from importlib.metadata import metadata
 
 
 CLIENT_TYPE = "fiftyone"
@@ -44,7 +42,7 @@ RESOURCES_DIR = os.path.join(FIFTYONE_DIR, "resources")
 # This setting may be ``None`` if this client has no compatibility with other
 # versions
 #
-COMPATIBLE_VERSIONS = ">=0.19,<0.25"
+COMPATIBLE_VERSIONS = ">=0.19,<1.5"
 
 # Package metadata
 _META = metadata("fiftyone")
@@ -53,8 +51,8 @@ VERSION = _META["version"]
 DESCRIPTION = _META["summary"]
 AUTHOR = _META["author"]
 AUTHOR_EMAIL = _META["author-email"]
-URL = _META["home-page"]
-LICENSE = _META["license"]
+URL = _META.get("home-page", "https://github.com/voxel51/fiftyone")
+LICENSE = _META.get("license", "Apache")
 VERSION_LONG = "FiftyOne v%s, %s" % (VERSION, AUTHOR)
 COPYRIGHT = "2017-%d, %s" % (datetime.now().year, AUTHOR)
 
@@ -108,11 +106,3 @@ DATABASE_APPNAME = "fiftyone"
 
 # Server setup
 SERVER_DIR = os.path.join(FIFTYONE_DIR, "server")
-
-# App setup
-try:
-    from fiftyone.desktop import FIFTYONE_DESKTOP_APP_DIR
-except ImportError:
-    FIFTYONE_DESKTOP_APP_DIR = os.path.normpath(
-        os.path.join(FIFTYONE_DIR, "../app")
-    )

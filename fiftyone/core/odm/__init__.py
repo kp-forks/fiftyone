@@ -1,7 +1,7 @@
 """
 ODM package declaration.
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
@@ -36,6 +36,7 @@ from .database import (
     drop_orphan_collections,
     drop_orphan_saved_views,
     drop_orphan_runs,
+    drop_orphan_stores,
     list_collections,
     get_collection_stats,
     stream_collection,
@@ -62,6 +63,7 @@ from .document import (
 from .embedded_document import (
     BaseEmbeddedDocument,
     DynamicEmbeddedDocument,
+    DynamicEmbeddedDocumentException,
     EmbeddedDocument,
 )
 from .frame import (

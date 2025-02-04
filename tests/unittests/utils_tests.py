@@ -1,20 +1,24 @@
 """
 FiftyOne utilities unit tests.
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
+
+from datetime import datetime
 import time
 import unittest
 from unittest.mock import MagicMock, patch
 
+from bson import ObjectId
 import numpy as np
 
 import fiftyone as fo
 import fiftyone.constants as foc
 import fiftyone.core.media as fom
 import fiftyone.core.odm as foo
+from fiftyone.core.odm.utils import load_dataset
 import fiftyone.core.utils as fou
 from fiftyone.migrations.runner import MigrationRunner
 
@@ -95,16 +99,16 @@ class BatcherTests(unittest.TestCase):
 
     def test_inexhaustible_content_size_batcher(self):
         batcher = fou.ContentSizeDynamicBatcher(
-            None, init_batch_size=100, target_size=10
+            None, init_batch_size=100, target_size=1000
         )
-        measurements = [1, 20, 10, 0.1, 11, 0]
+        measurements = [500, 2000, 1000, 0.1, 1100, 0]
         expected_batches = [
             100,
-            1_000,
-            500,
-            500,
-            50_000,
-            int(round(10 / 11 * 50_000)),
+            200,
+            100,
+            100,
+            1000,  # capped at 1000 or 1B per object
+            int(round(10 / 11 * 1000)),
         ]
         batches = []
         for m in measurements:
@@ -440,28 +444,59 @@ class MigrationTests(unittest.TestCase):
 
 class ConfigTests(unittest.TestCase):
     def test_multiple_config_cleanup(self):
+        # Note this is not a unit test and running this modifies the fiftyone config collection
+
         db = foo.get_db_conn()
         orig_config = foo.get_db_config()
 
-        # Add some duplicate documents
-        db.config.insert_one({"version": "0.14.4", "type": "fiftyone"})
-        db.config.insert_one({"version": "0.1.4", "type": "fiftyone"})
+        # Add old configs so that they are cleaned up
+        new_config_ids = [
+            ObjectId.from_datetime(datetime(2022, 1, 1)),
+            ObjectId.from_datetime(datetime(2023, 1, 1)),
+        ]
+        try:
+            # Ensure that the fake configs are not already in the database due to failed cleanup
+            db.config.delete_many({"_id": {"$in": new_config_ids}})
 
-        # Ensure that duplicate documents are automatically cleaned up
-        config = foo.get_db_config()
+            # Add some duplicate documents
+            db.config.insert_one(
+                {
+                    "_id": new_config_ids[0],
+                    "version": "0.14.4",
+                    "type": "fiftyone",
+                }
+            )
+            db.config.insert_one(
+                {
+                    "_id": new_config_ids[1],
+                    "version": "0.1.4",
+                    "type": "fiftyone",
+                }
+            )
 
-        self.assertEqual(len(list(db.config.aggregate([]))), 1)
-        self.assertEqual(config, orig_config)
+            config = foo.get_db_config()
 
+            if fo.config.database_admin:
+                # Ensure that duplicate documents are automatically cleaned up if run by database admin
+                self.assertEqual(len(list(db.config.aggregate([]))), 1)
+            else:
+                # Otherwise, the duplicates are not cleaned up
+                self.assertEqual(len(list(db.config.aggregate([]))), 3)
 
-from bson import ObjectId
-from fiftyone.core.odm.utils import load_dataset
+            # Regardless, the config should be the same
+            self.assertEqual(config, orig_config)
+        finally:
+            # Clean up the fake configs
+            db.config.delete_many({"_id": {"$in": new_config_ids}})
 
 
 class TestLoadDataset(unittest.TestCase):
+    @patch("fiftyone.core.dataset.dataset_exists")
     @patch("fiftyone.core.odm.get_db_conn")
     @patch("fiftyone.core.dataset.Dataset")
-    def test_load_dataset_by_id(self, mock_dataset, mock_get_db_conn):
+    def test_load_dataset_by_id(
+        self, mock_dataset, mock_get_db_conn, dataset_exists
+    ):
         # Setup
         identifier = ObjectId()
         mock_db = MagicMock()
@@ -470,6 +505,7 @@ class TestLoadDataset(unittest.TestCase):
             "_id": ObjectId(identifier),
             "name": "test_dataset",
         }
+        dataset_exists.return_value = True
 
         # Test
         result = load_dataset(id=identifier)
@@ -482,9 +518,12 @@ class TestLoadDataset(unittest.TestCase):
 
         self.assertEqual(result, mock_dataset.return_value)
 
+    @patch("fiftyone.core.dataset.dataset_exists")
     @patch("fiftyone.core.odm.get_db_conn")
     @patch("fiftyone.core.dataset.Dataset")
-    def test_load_dataset_by_alt_id(self, mock_dataset, mock_get_db_conn):
+    def test_load_dataset_by_alt_id(
+        self, mock_dataset, mock_get_db_conn, dataset_exists
+    ):
         # Setup
         identifier = "alt_id"
         mock_db = MagicMock()
@@ -493,6 +532,7 @@ class TestLoadDataset(unittest.TestCase):
             "_id": "identifier",
             "name": "dataset_name",
         }
+        dataset_exists.return_value = True
 
         # Test
         result = load_dataset(id=identifier)
@@ -504,11 +544,13 @@ class TestLoadDataset(unittest.TestCase):
         )
         self.assertEqual(result, mock_dataset.return_value)
 
+    @patch("fiftyone.core.dataset.dataset_exists")
     @patch("fiftyone.core.dataset.Dataset")
-    def test_load_dataset_by_name(self, mock_dataset):
+    def test_load_dataset_by_name(self, mock_dataset, dataset_exists):
         # Setup
         identifier = "test_dataset"
         mock_dataset.return_value = {"_id": ObjectId(), "name": identifier}
+        dataset_exists.return_value = True
 
         # Test
         result = load_dataset(name=identifier)

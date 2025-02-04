@@ -1,25 +1,28 @@
 """
 Intersection over union (IoU) utilities.
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
+from collections import defaultdict
 import contextlib
 import itertools
 import logging
 
 import numpy as np
+import rtree.index as rti
 import scipy.spatial as sp
 
 import eta.core.numutils as etan
 import eta.core.utils as etau
+import eta.core.image as etai
 
 import fiftyone.core.labels as fol
 import fiftyone.core.utils as fou
 import fiftyone.core.validation as fov
 
-from .utils3d import compute_cuboid_iou
+from .utils3d import compute_cuboid_iou, _Box
 
 sg = fou.lazy_import("shapely.geometry")
 so = fou.lazy_import("shapely.ops")
@@ -33,6 +36,7 @@ def compute_ious(
     use_masks=False,
     use_boxes=False,
     tolerance=None,
+    sparse=False,
     error_level=1,
 ):
     """Computes the pairwise IoUs between the predicted and ground truth
@@ -70,7 +74,10 @@ def compute_ious(
             of the provided :class:`fiftyone.core.labels.Polyline` instances
             rather than using their actual geometries
         tolerance (None): a tolerance, in pixels, when generating approximate
-            polylines for instance masks. Typical values are 1-3 pixels
+            polylines for instance masks. Typical values are 1-3 pixels. By
+            default, IoUs are computed directly on the dense pixel masks
+        sparse (False): whether to return a sparse dict of non-zero IoUs rather
+            than a full matrix
         error_level (1): the error level to use when manipulating instance
             masks or polylines. Valid values are:
 
@@ -82,10 +89,15 @@ def compute_ious(
             error will default to an IoU of 0
 
     Returns:
-        a ``num_preds x num_gts`` array of IoUs
+        a ``num_preds x num_gts`` array of IoUs when ``sparse=False``, or a
+        dict of the form ``d[pred.id] = [(gt.id, iou), ...]`` when
+        ``sparse=True``
     """
     if not preds or not gts:
-        return np.zeros((len(preds), len(gts)))
+        if sparse:
+            return {p.id: [] for p in preds} if preds else {}
+        else:
+            return np.zeros((len(preds or []), len(gts or [])))
 
     if etau.is_str(iscrowd):
         iscrowd = lambda l: bool(l.get_attribute_value(iscrowd, False))
@@ -93,25 +105,39 @@ def compute_ious(
     if isinstance(gts[0], fol.Polyline):
         if use_boxes:
             return _compute_bbox_ious(
-                preds, gts, iscrowd=iscrowd, classwise=classwise
+                preds,
+                gts,
+                iscrowd=iscrowd,
+                classwise=classwise,
+                sparse=sparse,
             )
 
         if any(gt.filled for gt in gts):
             return _compute_polygon_ious(
-                preds, gts, error_level, iscrowd=iscrowd, classwise=classwise
+                preds,
+                gts,
+                error_level,
+                iscrowd=iscrowd,
+                classwise=classwise,
+                sparse=sparse,
             )
 
-        return _compute_polyline_similarities(preds, gts, classwise=classwise)
+        return _compute_polyline_similarities(
+            preds,
+            gts,
+            classwise=classwise,
+            sparse=sparse,
+        )
 
     if isinstance(gts[0], fol.Keypoint):
-        return _compute_keypoint_similarities(preds, gts, classwise=classwise)
+        return _compute_keypoint_similarities(
+            preds,
+            gts,
+            classwise=classwise,
+            sparse=sparse,
+        )
 
     if use_masks:
-        # @todo when tolerance is None, consider using dense masks rather than
-        # polygonal approximations?
-        if tolerance is None:
-            tolerance = 2
-
         return _compute_mask_ious(
             preds,
             gts,
@@ -119,12 +145,19 @@ def compute_ious(
             error_level,
             iscrowd=iscrowd,
             classwise=classwise,
+            sparse=sparse,
         )
 
-    return _compute_bbox_ious(preds, gts, iscrowd=iscrowd, classwise=classwise)
+    return _compute_bbox_ious(
+        preds,
+        gts,
+        iscrowd=iscrowd,
+        classwise=classwise,
+        sparse=sparse,
+    )
 
 
-def compute_segment_ious(preds, gts):
+def compute_segment_ious(preds, gts, sparse=False):
     """Computes the pairwise IoUs between the predicted and ground truth
     temporal detections.
 
@@ -133,14 +166,21 @@ def compute_segment_ious(preds, gts):
             :class:`fiftyone.core.labels.TemporalDetection` instances
         gts: a list of ground truth
             :class:`fiftyone.core.labels.TemporalDetection` instances
+        sparse (False): whether to return a sparse dict of non-zero IoUs rather
+            than a full matrix
 
     Returns:
-        a ``num_preds x num_gts`` array of segment IoUs
+        a ``num_preds x num_gts`` array of segment IoUs when ``sparse=False``,
+        or a dict of the form ``d[pred.id] = [(gt.id, iou), ...]`` when
+        ``sparse=True``
     """
     if not preds or not gts:
-        return np.zeros((len(preds), len(gts)))
+        if sparse:
+            return {p.id: [] for p in preds}
+        else:
+            return np.zeros((len(preds or []), len(gts or [])))
 
-    return _compute_segment_ious(preds, gts)
+    return _compute_segment_ious(preds, gts, sparse=sparse)
 
 
 def compute_max_ious(
@@ -485,8 +525,113 @@ def compute_bbox_iou(gt, pred, gt_crowd=False):
     return min(etan.safe_divide(inter, union), 1)
 
 
-def _compute_bbox_ious(preds, gts, iscrowd=None, classwise=False):
+def _dense_iou(gt, pred, gt_crowd=False):
+    """Computes the IoU between the given ground truth and predicted
+    detection masks.
+
+    Args:
+        gt: a :class:`fiftyone.core.labels.Detection`
+        pred: a :class:`fiftyone.core.labels.Detection`
+        gt_crowd (False): whether the ground truth object is a crowd
+
+    Returns:
+        the IoU, in ``[0, 1]``
+    """
+    gt_mask = gt.mask
+    gt_bb = gt.bounding_box  # x,y,w,h of box
+    gt_mask_h, gt_mask_w = gt_mask.shape
+
+    pred_mask = pred.mask
+    pred_bb = pred.bounding_box  # x,y,w,h of box
+    pred_mask_h, pred_mask_w = pred_mask.shape
+
+    gt_img_w = round(gt_mask_w / gt_bb[2])
+    gt_img_h = round(gt_mask_h / gt_bb[3])
+
+    pred_img_w = round(pred_mask_w / pred_bb[2])
+    pred_img_h = round(pred_mask_h / pred_bb[3])
+
+    gt_mask_full = np.zeros((gt_img_h, gt_img_w))
+    pred_mask_full = np.zeros((pred_img_h, pred_img_w))
+
+    x1, y1, x2, y2 = _float_to_pixel(gt_bb, gt_img_w, gt_img_h)
+    gt_mask_full[y1:y2, x1:x2] = gt_mask
+
+    x1, y1, x2, y2 = _float_to_pixel(pred_bb, pred_img_w, pred_img_h)
+    pred_mask_full[y1:y2, x1:x2] = pred_mask
+
+    if gt_img_w != pred_img_w or gt_img_h != pred_img_h:
+        gt_size = gt_img_w * gt_img_h
+        pred_size = pred_img_w * pred_img_h
+        if gt_size > pred_size:
+            pred_mask_full = etai.resize(
+                pred_mask_full,
+                height=gt_img_h,
+                width=gt_img_w,
+                interpolation=0,  # equivalent to cv2.INTER_NEAREST
+            )
+        else:
+            gt_mask_full = etai.resize(
+                gt_mask_full,
+                height=pred_img_h,
+                width=pred_img_w,
+                interpolation=0,  # equivalent to cv2.INTER_NEAREST
+            )
+
+    inter = np.logical_and(gt_mask_full, pred_mask_full).sum()
+    union = np.logical_or(gt_mask_full, pred_mask_full).sum()
+
+    return min(etan.safe_divide(inter, union), 1)
+
+
+def _get_detection_box(det, dimension=None):
+    if dimension is None:
+        dimension = _get_bbox_dim(det)
+
+    if dimension == 2:
+        px, py, pw, ph = det.bounding_box
+        xmin = px
+        xmax = px + pw
+        ymin = py
+        ymax = py + ph
+        result = (xmin, xmax, ymin, ymax)
+    elif dimension == 3:
+        box = _Box(det.rotation, det.location, det.dimensions)
+        xmin = np.min(box.vertices[:, 0])
+        xmax = np.max(box.vertices[:, 0])
+        ymin = np.min(box.vertices[:, 1])
+        ymax = np.max(box.vertices[:, 1])
+        zmin = np.min(box.vertices[:, 2])
+        zmax = np.max(box.vertices[:, 2])
+        result = (xmin, xmax, ymin, ymax, zmin, zmax)
+    else:
+        raise ValueError(f"dimension should be 2 or 3, but got {dimension}")
+
+    return result
+
+
+def _get_poly_box(x):
+    detection = x.to_detection()
+    return _get_detection_box(detection)
+
+
+def _get_mask_box(x):
+    return _get_detection_box(x)
+
+
+def _compute_bbox_ious(
+    preds,
+    gts,
+    iscrowd=None,
+    classwise=False,
+    sparse=False,
+):
     is_symmetric = preds is gts
+
+    if sparse:
+        ious = defaultdict(list)
+    else:
+        ious = np.zeros((len(preds), len(gts)))
 
     if iscrowd is not None:
         gt_crowds = [iscrowd(gt) for gt in gts]
@@ -495,33 +640,103 @@ def _compute_bbox_ious(preds, gts, iscrowd=None, classwise=False):
 
     if isinstance(preds[0], fol.Polyline):
         preds = _polylines_to_detections(preds)
-
         if is_symmetric:
             gts = preds
         else:
             gts = _polylines_to_detections(gts)
 
+    index_property = rti.Property()
     if _get_bbox_dim(gts[0]) == 3:
         bbox_iou_fcn = compute_cuboid_iou
+        index_property.dimension = 3
     else:
         bbox_iou_fcn = compute_bbox_iou
+        index_property.dimension = 2
 
-    ious = np.zeros((len(preds), len(gts)))
+    rtree_index = rti.Index(properties=index_property, interleaved=False)
+    for i, gt in enumerate(gts):
+        box = _get_detection_box(gt, dimension=index_property.dimension)
+        rtree_index.insert(i, box)
 
-    for j, (gt, gt_crowd) in enumerate(zip(gts, gt_crowds)):
-
-        for i, pred in enumerate(preds):
-            if is_symmetric and i < j:
-                iou = ious[j, i]
-            elif is_symmetric and i == j:
-                iou = 1
-            elif classwise and pred.label != gt.label:
+    for i, pred in enumerate(preds):
+        box = _get_detection_box(pred, dimension=index_property.dimension)
+        # pylint: disable=no-value-for-parameter
+        indices = rtree_index.intersection(box)
+        for j in indices:  # pylint: disable=not-an-iterable
+            gt = gts[j]
+            gt_crowd = gt_crowds[j]
+            if classwise and pred.label != gt.label:
                 continue
+
+            if is_symmetric and j > i:
+                continue
+
+            iou = bbox_iou_fcn(gt, pred, gt_crowd=gt_crowd)
+
+            if sparse:
+                ious[pred.id].append((gt.id, iou))
+                if is_symmetric:
+                    ious[gt.id].append((pred.id, iou))
             else:
-                iou = bbox_iou_fcn(gt, pred, gt_crowd=gt_crowd)
+                ious[i, j] = iou
+                if is_symmetric:
+                    ious[j, i] = iou
 
-            ious[i, j] = iou
+    return ious
 
+
+def _compute_dense_mask_ious(
+    preds,
+    gts,
+    error_level,
+    iscrowd=None,
+    classwise=False,
+    sparse=False,
+):
+    is_symmetric = preds is gts
+
+    if sparse:
+        ious = defaultdict(list)
+    else:
+        ious = np.zeros((len(preds), len(gts)))
+
+    if iscrowd is not None:
+        gt_crowds = [iscrowd(gt) for gt in gts]
+    else:
+        gt_crowds = [False] * len(gts)
+
+    index_property = rti.Property()
+    bbox_iou_fcn = compute_bbox_iou
+    index_property.dimension = 2
+
+    rtree_index = rti.Index(properties=index_property, interleaved=False)
+    for i, gt in enumerate(gts):
+        box = _get_mask_box(gt)
+        rtree_index.insert(i, box)
+
+    for i, pred in enumerate(preds):
+        box = _get_mask_box(pred)
+        # pylint: disable=no-value-for-parameter
+        indices = rtree_index.intersection(box)
+        for j in indices:  # pylint: disable=not-an-iterable
+            gt = gts[j]
+            gt_crowd = gt_crowds[j]
+            if classwise and pred.label != gt.label:
+                continue
+
+            if is_symmetric and j > i:
+                continue
+
+            iou = _dense_iou(gt, pred, gt_crowd=gt_crowd)
+
+            if sparse:
+                ious[pred.id].append((gt.id, iou))
+                if is_symmetric:
+                    ious[gt.id].append((pred.id, iou))
+            else:
+                ious[i, j] = iou
+                if is_symmetric:
+                    ious[j, i] = iou
     return ious
 
 
@@ -532,8 +747,14 @@ def _compute_polygon_ious(
     iscrowd=None,
     classwise=False,
     gt_crowds=None,
+    sparse=False,
 ):
     is_symmetric = preds is gts
+
+    if sparse:
+        ious = defaultdict(list)
+    else:
+        ious = np.zeros((len(preds), len(gts)))
 
     with contextlib.ExitStack() as context:
         # We're ignoring errors, so suppress shapely logging that occurs when
@@ -543,18 +764,15 @@ def _compute_polygon_ious(
                 fou.LoggingLevel(logging.CRITICAL, logger="shapely")
             )
 
-        num_pred = len(preds)
         pred_polys = _polylines_to_shapely(preds, error_level)
         pred_labels = [pred.label for pred in preds]
         pred_areas = [pred_poly.area for pred_poly in pred_polys]
 
         if is_symmetric:
-            num_gt = num_pred
             gt_polys = pred_polys
             gt_labels = pred_labels
             gt_areas = pred_areas
         else:
-            num_gt = len(gts)
             gt_polys = _polylines_to_shapely(gts, error_level)
             gt_labels = [gt.label for gt in gts]
             gt_areas = [gt_poly.area for gt_poly in gt_polys]
@@ -562,140 +780,224 @@ def _compute_polygon_ious(
         if iscrowd is not None:
             gt_crowds = [iscrowd(gt) for gt in gts]
         elif gt_crowds is None:
-            gt_crowds = [False] * num_gt
+            gt_crowds = [False] * len(gts)
 
-        ious = np.zeros((num_pred, num_gt))
+        rtree_index = rti.Index(interleaved=False)
+        for i, gt in enumerate(gts):
+            box = _get_poly_box(gt)
+            rtree_index.insert(i, box)
 
-        for j, (gt_poly, gt_label, gt_area, gt_crowd) in enumerate(
-            zip(gt_polys, gt_labels, gt_areas, gt_crowds)
+        for i, (pred, pred_poly, pred_label, pred_area) in enumerate(
+            zip(preds, pred_polys, pred_labels, pred_areas)
         ):
-            for i, (pred_poly, pred_label, pred_area) in enumerate(
-                zip(pred_polys, pred_labels, pred_areas)
-            ):
-                if is_symmetric and i < j:
-                    iou = ious[j, i]
-                elif is_symmetric and i == j:
-                    iou = 1
-                elif classwise and pred_label != gt_label:
+            box = _get_poly_box(pred)
+            # pylint: disable=no-value-for-parameter
+            indices = rtree_index.intersection(box)
+            for j in indices:  # pylint: disable=not-an-iterable
+                gt = gts[j]
+                gt_poly = gt_polys[j]
+                gt_label = gt_labels[j]
+                gt_area = gt_areas[j]
+                gt_crowd = gt_crowds[j]
+
+                if classwise and pred_label != gt_label:
                     continue
+
+                if is_symmetric and j > i:
+                    continue
+
+                try:
+                    inter = gt_poly.intersection(pred_poly).area
+                except Exception as e:
+                    fou.handle_error(
+                        ValueError(
+                            "Failed to compute intersection of predicted "
+                            "object '%s' and ground truth object '%s'"
+                            % (preds[i].id, gts[j].id)
+                        ),
+                        error_level,
+                        base_error=e,
+                    )
+                    continue
+
+                if gt_crowd:
+                    union = pred_area
                 else:
-                    try:
-                        inter = gt_poly.intersection(pred_poly).area
-                    except Exception as e:
-                        inter = 0.0
-                        fou.handle_error(
-                            ValueError(
-                                "Failed to compute intersection of predicted "
-                                "object '%s' and ground truth object '%s'"
-                                % (preds[i].id, gts[j].id)
-                            ),
-                            error_level,
-                            base_error=e,
-                        )
+                    union = pred_area + gt_area - inter
 
-                    if gt_crowd:
-                        union = pred_area
-                    else:
-                        union = pred_area + gt_area - inter
+                iou = min(etan.safe_divide(inter, union), 1)
 
-                    iou = min(etan.safe_divide(inter, union), 1)
-
-                ious[i, j] = iou
+                if sparse:
+                    ious[pred.id].append((gt.id, iou))
+                    if is_symmetric:
+                        ious[gt.id].append((pred.id, iou))
+                else:
+                    ious[i, j] = iou
+                    if is_symmetric:
+                        ious[j, i] = iou
 
     return ious
 
 
-def _compute_polyline_similarities(preds, gts, classwise=False):
-    sims = np.zeros((len(preds), len(gts)))
-    for j, gt in enumerate(gts):
-        for i, pred in enumerate(preds):
+def _compute_polyline_similarities(preds, gts, classwise=False, sparse=False):
+    is_symmetric = preds is gts
+
+    if sparse:
+        sims = defaultdict(list)
+    else:
+        sims = np.zeros((len(preds), len(gts)))
+
+    for i, pred in enumerate(preds):
+        for j, gt in enumerate(gts):
             if classwise and pred.label != gt.label:
+                continue
+
+            if is_symmetric and j > i:
                 continue
 
             gtp = list(itertools.chain.from_iterable(gt.points))
             predp = list(itertools.chain.from_iterable(pred.points))
-            sims[i, j] = _compute_object_keypoint_similarity(gtp, predp)
+            sim = _compute_object_keypoint_similarity(gtp, predp)
+            if sim <= 0:
+                continue
+
+            if sparse:
+                sims[pred.id].append((gt.id, sim))
+                if is_symmetric:
+                    sims[gt.id].append((pred.id, sim))
+            else:
+                sims[i, j] = sim
+                if is_symmetric:
+                    sims[j, i] = sim
 
     return sims
 
 
 def _compute_mask_ious(
-    preds, gts, tolerance, error_level, iscrowd=None, classwise=False
+    preds,
+    gts,
+    tolerance,
+    error_level,
+    iscrowd=None,
+    classwise=False,
+    sparse=False,
 ):
     is_symmetric = preds is gts
-
-    with contextlib.ExitStack() as context:
-        # We're ignoring errors, so suppress shapely logging that occurs when
-        # invalid geometries are encountered
-        if error_level > 1:
-            context.enter_context(
-                fou.LoggingLevel(logging.CRITICAL, logger="shapely")
-            )
-
-        pred_polys = _masks_to_polylines(preds, tolerance, error_level)
-
-        if is_symmetric:
-            gt_polys = pred_polys
-        else:
-            gt_polys = _masks_to_polylines(gts, tolerance, error_level)
 
     if iscrowd is not None:
         gt_crowds = [iscrowd(gt) for gt in gts]
     else:
         gt_crowds = [False] * len(gts)
 
-    return _compute_polygon_ious(
-        pred_polys,
-        gt_polys,
-        error_level,
-        classwise=classwise,
-        gt_crowds=gt_crowds,
-    )
+    if tolerance is None:
+        return _compute_dense_mask_ious(
+            preds,
+            gts,
+            error_level,
+            classwise=classwise,
+            sparse=sparse,
+        )
+    else:
+        with contextlib.ExitStack() as context:
+            # We're ignoring errors, so suppress shapely logging that occurs when
+            # invalid geometries are encountered
+            if error_level > 1:
+                context.enter_context(
+                    fou.LoggingLevel(logging.CRITICAL, logger="shapely")
+                )
+
+            pred_polys = _masks_to_polylines(preds, tolerance, error_level)
+
+            if is_symmetric:
+                gt_polys = pred_polys
+            else:
+                gt_polys = _masks_to_polylines(gts, tolerance, error_level)
+
+        return _compute_polygon_ious(
+            pred_polys,
+            gt_polys,
+            error_level,
+            classwise=classwise,
+            gt_crowds=gt_crowds,
+            sparse=sparse,
+        )
 
 
-def _compute_segment_ious(preds, gts):
+def _compute_segment_ious(preds, gts, sparse=False):
     is_symmetric = preds is gts
 
-    ious = np.zeros((len(preds), len(gts)))
-    for j, gt in enumerate(gts):
-        gst, get = gt.support
-        gt_len = get - gst
+    if sparse:
+        ious = defaultdict(list)
+    else:
+        ious = np.zeros((len(preds), len(gts)))
 
-        for i, pred in enumerate(preds):
-            if is_symmetric and i < j:
-                iou = ious[j, i]
-            elif is_symmetric and i == j:
-                iou = 1
+    for i, pred in enumerate(preds):
+        for j, gt in enumerate(gts):
+            if is_symmetric and j > i:
+                continue
+
+            gst, get = gt.support
+            gt_len = get - gst
+
+            pst, pet = pred.support
+            pred_len = pet - pst
+
+            if pred_len == 0 and gt_len == 0:
+                if pet != get:
+                    continue
+
+                iou = 1.0
             else:
-                pst, pet = pred.support
-                pred_len = pet - pst
+                # Length of temporal intersection
+                inter = min(get, pet) - max(gst, pst)
+                if inter <= 0:
+                    continue
 
-                if pred_len == 0 and gt_len == 0:
-                    iou = float(pet == get)
-                else:
-                    # Length of temporal intersection
-                    inter = min(get, pet) - max(gst, pst)
-                    if inter <= 0:
-                        continue
+                union = pred_len + gt_len - inter
+                iou = min(etan.safe_divide(inter, union), 1)
 
-                    union = pred_len + gt_len - inter
-                    iou = min(etan.safe_divide(inter, union), 1)
-
-            ious[i, j] = iou
+            if sparse:
+                ious[pred.id].append((gt.id, iou))
+                if is_symmetric:
+                    ious[gt.id].append((pred.id, iou))
+            else:
+                ious[i, j] = iou
+                if is_symmetric:
+                    ious[j, i] = iou
 
     return ious
 
 
-def _compute_keypoint_similarities(preds, gts, classwise=False):
-    sims = np.zeros((len(preds), len(gts)))
-    for j, gt in enumerate(gts):
-        for i, pred in enumerate(preds):
+def _compute_keypoint_similarities(preds, gts, classwise=False, sparse=False):
+    is_symmetric = preds is gts
+
+    if sparse:
+        sims = defaultdict(list)
+    else:
+        sims = np.zeros((len(preds), len(gts)))
+
+    for i, pred in enumerate(preds):
+        for j, gt in enumerate(gts):
             if classwise and pred.label != gt.label:
+                continue
+
+            if is_symmetric and j > i:
                 continue
 
             gtp = gt.points
             predp = pred.points
-            sims[i, j] = _compute_object_keypoint_similarity(gtp, predp)
+            sim = _compute_object_keypoint_similarity(gtp, predp)
+            if sim <= 0:
+                continue
+
+            if sparse:
+                sims[pred.id].append((gt.id, sim))
+                if is_symmetric:
+                    sims[gt.id].append((pred.id, sim))
+            else:
+                sims[i, j] = sim
+                if is_symmetric:
+                    sims[j, i] = sim
 
     return sims
 
@@ -732,6 +1034,14 @@ def _compute_object_keypoint_similarity(gtp, predp):
     # object keypoint similarity with kappa == 1
     # https://cocodataset.org/#keypoints-eval
     return np.sum(np.exp(-(dists**2) / (2 * (scale**2)))) / n
+
+
+def _float_to_pixel(gt_bb, img_w, img_h):
+    x1 = round(gt_bb[0] * img_w)
+    y1 = round(gt_bb[1] * img_h)
+    x2 = round(x1 + (gt_bb[2] * img_w))
+    y2 = round(y1 + (gt_bb[3] * img_h))
+    return x1, y1, x2, y2
 
 
 def _polylines_to_detections(polylines):

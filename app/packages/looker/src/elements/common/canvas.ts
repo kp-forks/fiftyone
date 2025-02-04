@@ -1,5 +1,5 @@
 /**
- * Copyright 2017-2024, Voxel51, Inc.
+ * Copyright 2017-2025, Voxel51, Inc.
  */
 
 import { SCALE_FACTOR } from "../../constants";
@@ -23,7 +23,9 @@ export class CanvasElement<State extends BaseState> extends BaseElement<
   private wheelTimeout: ReturnType<typeof setTimeout> | null = null;
   private cursor: string;
 
-  getEvents(): Events<State> {
+  getEvents(config: Readonly<State["config"]>): Events<State> {
+    if (config.thumbnail) return {};
+
     return {
       click: ({ event, update, dispatchEvent }) => {
         update({ showOptions: false }, (state, overlays, sample) => {

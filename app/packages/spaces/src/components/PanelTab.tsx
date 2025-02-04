@@ -1,32 +1,39 @@
-import { useCallback } from "react";
-import { IconButton } from "@fiftyone/components";
+import { HelpTooltip, IconButton } from "@fiftyone/components";
+import { useTimeout } from "@fiftyone/state";
 import { Close } from "@mui/icons-material";
+import { CircularProgress, Grid, Skeleton, Typography } from "@mui/material";
+import { useCallback } from "react";
+import { PANEL_LOADING_TIMEOUT } from "../constants";
 import {
-  usePanel,
   usePanelCloseEffect,
+  usePanelLoading,
   usePanelTitle,
+  useReactivePanel,
   useSpaces,
 } from "../hooks";
 import { PanelTabProps } from "../types";
-import { warnPanelNotFound } from "../utils";
 import PanelIcon from "./PanelIcon";
-import { StyledTab, TabIndicatorContainer } from "./StyledElements";
+import {
+  HelpTabIconContainer,
+  StyledTab,
+  TabIndicatorContainer,
+} from "./StyledElements";
 
 export default function PanelTab({ node, active, spaceId }: PanelTabProps) {
   const { spaces } = useSpaces(spaceId);
-  const panelName = node.type;
+  const panelName = node.type as string;
   const panelId = node.id;
-  const panel = usePanel(panelName);
+  const panel = useReactivePanel(panelName);
   const [title] = usePanelTitle(panelId);
+  const [loading] = usePanelLoading(panelId);
   const closeEffect = usePanelCloseEffect(panelId);
+  const pending = useTimeout(PANEL_LOADING_TIMEOUT);
 
   const handleClose = useCallback(() => {
     if (node.pinned) return;
     closeEffect();
     spaces.removeNode(node);
   }, [node, closeEffect, spaces]);
-
-  if (!panel) return warnPanelNotFound(panelName);
 
   const TabIndicator = panel?.panelOptions?.TabIndicator;
 
@@ -40,15 +47,31 @@ export default function PanelTab({ node, active, spaceId }: PanelTabProps) {
       onClick={() => {
         if (!active) spaces.setNodeActive(node);
       }}
-      active={active}
+      $active={active}
       data-cy={`panel-tab-${(panelName as string).toLowerCase()}`}
     >
-      <PanelIcon name={panelName as string} />
-      {title || panel.label || panel.name}
-      {TabIndicator && (
+      {!panel && pending && <Skeleton width={48} height={24} />}
+      {!panel && !pending && <Typography>{panelName}</Typography>}
+      {panel && loading && <CircularProgress size={14} sx={{ mr: 0.85 }} />}
+      {panel && !loading && <PanelIcon name={panelName as string} />}
+      {panel && <Typography>{title || panel.label || panel.name}</Typography>}
+      <PanelTabMeta
+        showBeta={panel?.panelOptions?.beta ?? false}
+        showNew={panel?.panelOptions?.isNew ?? false}
+      />
+      {panel && TabIndicator && (
         <TabIndicatorContainer>
           <TabIndicator />
         </TabIndicatorContainer>
+      )}
+      {panel?.panelOptions?.helpMarkdown && (
+        <HelpTabIconContainer>
+          <HelpTooltip
+            title={panel.panelOptions.helpMarkdown}
+            isTitleMarkdown
+            iconSx={{ fontSize: 14 }}
+          />
+        </HelpTabIconContainer>
       )}
       {!node.pinned && (
         <IconButton
@@ -64,5 +87,40 @@ export default function PanelTab({ node, active, spaceId }: PanelTabProps) {
         </IconButton>
       )}
     </StyledTab>
+  );
+}
+
+function PanelTabMeta({
+  showBeta,
+  showNew,
+}: {
+  showBeta: boolean;
+  showNew: boolean;
+}) {
+  return (
+    <Grid container gap={1} sx={{ width: "auto", ml: "6px" }}>
+      {showNew && (
+        <Grid
+          item
+          style={{
+            color: "var(--fo-palette-custom-primarySoft)",
+            fontSize: 11,
+          }}
+        >
+          NEW
+        </Grid>
+      )}
+      {showBeta && (
+        <Grid
+          item
+          style={{
+            color: "var(--fo-palette-custom-primarySoft)",
+            fontSize: 11,
+          }}
+        >
+          BETA
+        </Grid>
+      )}
+    </Grid>
   );
 }

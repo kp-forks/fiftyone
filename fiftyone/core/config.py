@@ -1,19 +1,14 @@
 """
 FiftyOne config.
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
 
 import logging
 import os
-
-try:
-    from importlib import metadata as importlib_metadata  # Python 3.8
-except ImportError:
-    import importlib_metadata  # Python < 3.8
-
+from importlib import metadata
 import pytz
 
 import eta
@@ -125,6 +120,12 @@ class FiftyOneConfig(EnvConfig):
             env_var="FIFTYONE_OPERATOR_TIMEOUT",
             default=600,  # 600 seconds (10 minutes)
         )
+        self.allow_legacy_orchestrators = self.parse_bool(
+            d,
+            "allow_legacy_orchestrators",
+            env_var="FIFTYONE_ALLOW_LEGACY_ORCHESTRATORS",
+            default=False,
+        )
         self.dataset_zoo_manifest_paths = self.parse_path_array(
             d,
             "dataset_zoo_manifest_paths",
@@ -208,12 +209,6 @@ class FiftyOneConfig(EnvConfig):
             "default_app_address",
             env_var="FIFTYONE_DEFAULT_APP_ADDRESS",
             default="localhost",
-        )
-        self.desktop_app = self.parse_bool(
-            d,
-            "desktop_app",
-            env_var="FIFTYONE_DESKTOP_APP",
-            default=False,
         )
         self.logging_level = self.parse_string(
             d,
@@ -359,11 +354,17 @@ class AppConfig(EnvConfig):
         self.grid_zoom = self.parse_int(
             d, "grid_zoom", env_var="FIFTYONE_APP_GRID_ZOOM", default=5
         )
-        self.lightning_threshold = self.parse_int(
+        self.enable_query_performance = self.parse_bool(
             d,
-            "lightning_threshold",
-            env_var="FIFTYONE_APP_LIGHTNING_THRESHOLD",
-            default=None,
+            "enable_query_performance",
+            env_var="FIFTYONE_APP_ENABLE_QUERY_PERFORMANCE",
+            default=True,
+        )
+        self.default_query_performance = self.parse_bool(
+            d,
+            "default_query_performance",
+            env_var="FIFTYONE_APP_DEFAULT_QUERY_PERFORMANCE",
+            default=True,
         )
         self.loop_videos = self.parse_bool(
             d,
@@ -375,6 +376,12 @@ class AppConfig(EnvConfig):
             d,
             "media_fallback",
             env_var="FIFTYONE_APP_MEDIA_FALLBACK",
+            default=False,
+        )
+        self.disable_frame_filtering = self.parse_bool(
+            d,
+            "disable_frame_filtering",
+            env_var="FIFTYONE_APP_DISABLE_FRAME_FILTERING",
             default=False,
         )
         self.multicolor_keypoints = self.parse_bool(
@@ -424,12 +431,6 @@ class AppConfig(EnvConfig):
             "show_tooltip",
             env_var="FIFTYONE_APP_SHOW_TOOLTIP",
             default=True,
-        )
-        self.sidebar_mode = self.parse_string(
-            d,
-            "sidebar_mode",
-            env_var="FIFTYONE_APP_SIDEBAR_MODE",
-            default="fast",
         )
         self.theme = self.parse_string(
             d,
@@ -501,17 +502,6 @@ class AppConfig(EnvConfig):
                 default_color_by,
             )
             self.color_by = default_color_by
-
-        supported_sidebar_modes = {"all", "best", "fast", "disabled"}
-        default_sidebar_mode = "best"
-        if self.sidebar_mode not in supported_sidebar_modes:
-            logger.warning(
-                "Invalid sidebar_mode=%s. Must be one of %s. Defaulting to '%s'",
-                self.sidebar_mode,
-                supported_sidebar_modes,
-                default_sidebar_mode,
-            )
-            self.sidebar_mode = default_sidebar_mode
 
         supported_themes = {"browser", "dark", "light"}
         default_theme = "browser"
@@ -940,9 +930,7 @@ def _parse_env_value(value):
 
 def _get_installed_packages():
     try:
-        return set(
-            d.metadata["Name"] for d in importlib_metadata.distributions()
-        )
+        return set(d.metadata["Name"] for d in metadata.distributions())
     except:
         logger.debug("Failed to get installed packages")
         return set()

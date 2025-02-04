@@ -7,7 +7,6 @@ import {
   selectorFamily,
   useRecoilState,
   useRecoilValue,
-  useRecoilValueLoadable,
 } from "recoil";
 import { NameAndCountContainer } from "../../../utils";
 import { PathEntryCounts } from "../EntryCounts";
@@ -71,12 +70,6 @@ const Hidden = ({ path }: { path: string }) => {
   ) : null;
 };
 
-const useUnlocked = () => {
-  const lightning = useRecoilValue(fos.lightning);
-  const unlocked = useRecoilValueLoadable(fos.lightningUnlocked);
-  return !lightning || (unlocked.state == "hasValue" && unlocked.contents);
-};
-
 const useTitleTemplate = ({
   modal,
   path,
@@ -85,33 +78,30 @@ const useTitleTemplate = ({
   path: string;
 }) => {
   return function useTitleTemplate({ hoverHandlers, hoverTarget, container }) {
-    const disabled = useRecoilValue(fos.isDisabledPath(path));
+    const enabled = !useRecoilValue(fos.isDisabledCheckboxPath(path));
     const isFilterMode = useRecoilValue(fos.isSidebarFilterMode);
     const expandedPath = useRecoilValue(fos.expandPath(path));
-    const unlocked = useUnlocked();
 
     return (
-      <>
-        <NameAndCountContainer
-          ref={container}
-          data-cy={`sidebar-field-container-${path}`}
-        >
-          <span key="path" data-cy={`sidebar-field-${path}`}>
-            <span ref={hoverTarget} {...hoverHandlers}>
-              {PATH_OVERRIDES[path] || path}
-            </span>
+      <NameAndCountContainer
+        ref={container}
+        data-cy={`sidebar-field-container-${path}`}
+      >
+        <span key="path" data-cy={`sidebar-field-${path}`}>
+          <span ref={hoverTarget} {...hoverHandlers}>
+            {PATH_OVERRIDES[path] || path}
           </span>
-          {modal && (
-            <Suspense>
-              <Hidden path={path} />
-            </Suspense>
-          )}
-          {!disabled && isFilterMode && (unlocked || modal) && (
-            <PathEntryCounts key="count" modal={modal} path={expandedPath} />
-          )}
-          <Icon modal={modal} path={path} />
-        </NameAndCountContainer>
-      </>
+        </span>
+        {modal && (
+          <Suspense>
+            <Hidden path={path} />
+          </Suspense>
+        )}
+        {enabled && isFilterMode && (
+          <PathEntryCounts key="count" modal={modal} path={expandedPath} />
+        )}
+        {enabled && <Icon modal={modal} path={path} />}
+      </NameAndCountContainer>
     );
   };
 };

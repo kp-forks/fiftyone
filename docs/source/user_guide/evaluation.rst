@@ -9,20 +9,12 @@ FiftyOne provides a variety of builtin methods for evaluating your model
 predictions, including regressions, classifications, detections, polygons,
 instance and semantic segmentations, on both image and video datasets.
 
-.. note::
-
-    Did you know? You can evaluate models from within the FiftyOne App by
-    installing the
-    `@voxel51/evaluation <https://github.com/voxel51/fiftyone-plugins/tree/main/plugins/evaluation>`_
-    plugin!
-
 When you evaluate a model in FiftyOne, you get access to the standard aggregate
 metrics such as classification reports, confusion matrices, and PR curves
 for your model. In addition, FiftyOne can also record fine-grained statistics
 like accuracy and false positive counts at the sample-level, which you can
-leverage via :ref:`dataset views <using-views>` and the
-:ref:`FiftyOne App <fiftyone-app>` to interactively explore the strengths and
-weaknesses of your models on individual data samples.
+:ref:`interactively explore <app-model-evaluation-panel>` in the App to diagnose
+the strengths and weaknesses of your models on individual data samples.
 
 Sample-level analysis often leads to critical insights that will help you
 improve your datasets and models. For example, viewing the samples with the
@@ -53,21 +45,45 @@ method:
 .. code-block:: python
     :linenos:
 
+    import fiftyone as fo
     import fiftyone.zoo as foz
 
     dataset = foz.load_zoo_dataset("quickstart")
-    print(dataset)
 
     # Evaluate the objects in the `predictions` field with respect to the
     # objects in the `ground_truth` field
     results = dataset.evaluate_detections(
         "predictions",
         gt_field="ground_truth",
-        eval_key="eval_predictions",
+        eval_key="eval",
     )
 
-Aggregate metrics
+    session = fo.launch_app(dataset)
+
+.. _model-evaluation-panel:
+
+Model Evaluation panel __SUB_NEW__
+----------------------------------
+
+When you load a dataset in the App that contains one or more
+:ref:`evaluations <evaluating-models>`, you can open the
+:ref:`Model Evaluation panel <app-model-evaluation-panel>` to visualize and
+interactively explore the evaluation results in the App:
+
+.. image:: /images/app/model-evaluation-compare.gif
+    :alt: model-evaluation-compare
+    :align: center
+
+.. note::
+
+    Did you know? With :ref:`FiftyOne Teams <fiftyone-teams>` you can execute
+    model evaluations natively from the App
+    :ref:`in the background <delegated-operations>` while you work.
+
+Per-class metrics
 -----------------
+
+You can also retrieve and interact with evaluation results via the SDK.
 
 Running an evaluation returns an instance of a task-specific subclass of
 |EvaluationResults| that provides a handful of methods for generating aggregate
@@ -102,14 +118,13 @@ statistics about your dataset.
         macro avg       0.27      0.57      0.35      1311
      weighted avg       0.42      0.68      0.51      1311
 
-
 .. note::
+
     For details on micro, macro, and weighted averaging, see the 
     `sklearn.metrics documentation  <https://scikit-learn.org/stable/modules/generated/sklearn.metrics.precision_recall_fscore_support.html#sklearn.metrics.precision_recall_fscore_support>`_.
 
-
-Sample metrics
---------------
+Per-sample metrics
+------------------
 
 In addition to standard aggregate metrics, when you pass an ``eval_key``
 parameter to the evaluation routine, FiftyOne will populate helpful
@@ -131,8 +146,8 @@ dataset:
     # only includes false positive boxes in the `predictions` field
     view = (
         dataset
-        .sort_by("eval_predictions_fp", reverse=True)
-        .filter_labels("predictions", F("eval_predictions") == "fp")
+        .sort_by("eval_fp", reverse=True)
+        .filter_labels("predictions", F("eval") == "fp")
     )
 
     # Visualize results in the App
@@ -160,34 +175,17 @@ real performance of a model.
 Confusion matrices
 ------------------
 
-When you use evaluation methods such as
-:meth:`evaluate_classifications() <fiftyone.core.collections.SampleCollection.evaluate_classifications>`
-and
-:meth:`evaluate_detections() <fiftyone.core.collections.SampleCollection.evaluate_detections>`
-to evaluate model predictions, the confusion matrices that you can generate
-by calling the
-:meth:`plot_confusion_matrix() <fiftyone.utils.eval.classification.ClassificationResults.plot_confusion_matrix>`
-method are responsive plots that can be attached to App instances to
-interactively explore specific cases of your model's performance.
-
 .. note::
 
-    See :ref:`this section <confusion-matrix-plots>` for more information about
-    interactive confusion matrices in FiftyOne.
+    The easiest way to work with confusion matrices in FiftyOne is via the
+    :ref:`Model Evaluation panel <app-model-evaluation-panel>`!
 
-Continuing with our example, the code block below generates a confusion matrix
-for our evaluation results and :ref:`attaches it to the App <attaching-plots>`.
-
-In this setup, you can click on individual cells of the confusion matrix to
-select the corresponding ground truth and/or predicted objects in the App. For
-example, if you click on a diagonal cell of the confusion matrix, you will
-see the true positive examples of that class in the App.
-
-Likewise, whenever you modify the Session's view, either in the App or by
-programmatically setting
-:meth:`session.view <fiftyone.core.session.Session.view>`, the confusion matrix
-is automatically updated to show the cell counts for only those objects that
-are included in the current view.
+When you use evaluation methods such as
+:meth:`evaluate_detections() <fiftyone.core.collections.SampleCollection.evaluate_detections>`
+that support confusion matrices, you can use the
+:meth:`plot_confusion_matrix() <fiftyone.utils.eval.detection.DetectionResults.plot_confusion_matrix>`
+method to render responsive plots that can be attached to App instances to
+interactively explore specific cases of your model's performance:
 
 .. code-block:: python
     :linenos:
@@ -202,6 +200,17 @@ are included in the current view.
 .. image:: /images/plots/detection-evaluation.gif
    :alt: detection-evaluation
    :align: center
+
+In this setup, you can click on individual cells of the confusion matrix to
+select the corresponding ground truth and/or predicted objects in the App. For
+example, if you click on a diagonal cell of the confusion matrix, you will
+see the true positive examples of that class in the App.
+
+Likewise, whenever you modify the Session's view, either in the App or by
+programmatically setting
+:meth:`session.view <fiftyone.core.session.Session.view>`, the confusion matrix
+is automatically updated to show the cell counts for only those objects that
+are included in the current view.
 
 .. _managing-evaluations:
 
@@ -228,22 +237,22 @@ The example below demonstrates the basic interface:
 
     # List evaluations you've run on a dataset
     dataset.list_evaluations()
-    # ['eval_predictions']
+    # ['eval']
 
     # Print information about an evaluation
-    print(dataset.get_evaluation_info("eval_predictions"))
+    print(dataset.get_evaluation_info("eval"))
 
     # Load existing evaluation results and use them
-    results = dataset.load_evaluation_results("eval_predictions")
+    results = dataset.load_evaluation_results("eval")
     results.print_report()
 
     # Rename the evaluation
     # This will automatically rename any evaluation fields on your dataset
-    dataset.rename_evaluation("eval_predictions", "eval")
+    dataset.rename_evaluation("eval", "still_eval")
 
     # Delete the evaluation
     # This will remove any evaluation data that was populated on your dataset
-    dataset.delete_evaluation("eval")
+    dataset.delete_evaluation("still_eval")
 
 The sections below discuss evaluating various types of predictions in more
 detail.
@@ -490,10 +499,8 @@ to it to demonstrate the workflow:
 
 .. note::
 
-    Did you know? You can
-    :ref:`attach confusion matrices to the App <confusion-matrix-plots>` and
-    interactively explore them by clicking on their cells and/or modifying your
-    view in the App.
+    The easiest way to analyze models in FiftyOne is via the
+    :ref:`Model Evaluation panel <app-model-evaluation-panel>`!
 
 Top-k evaluation
 ----------------
@@ -575,6 +582,11 @@ from a pre-trained model from the :ref:`Model Zoo <model-zoo>`:
 .. image:: /images/evaluation/imagenet_top_k_eval.png
    :alt: imagenet-top-k-eval
    :align: center
+
+.. note::
+
+    The easiest way to analyze models in FiftyOne is via the
+    :ref:`Model Evaluation panel <app-model-evaluation-panel>`!
 
 Binary evaluation
 -----------------
@@ -671,6 +683,11 @@ added to it to demonstrate the workflow:
    :alt: cifar10-binary-pr-curve
    :align: center
 
+.. note::
+
+    The easiest way to analyze models in FiftyOne is via the
+    :ref:`Model Evaluation panel <app-model-evaluation-panel>`!
+
 .. _evaluating-detections:
 
 Detections
@@ -720,8 +737,9 @@ The only difference between each task type is in how the IoU between objects is
 calculated:
 
 -   For object detections, IoUs are computed between each pair of bounding boxes
--   For instance segmentations and polygons, IoUs are computed between the
-    polygonal shapes rather than their rectangular bounding boxes
+-   For instance segmentations, when ``use_masks=True``, IoUs are computed
+    between the dense pixel masks rather than their rectangular bounding boxes
+-   For polygons, IoUs are computed between the polygonal shapes
 -   For keypoint tasks,
     `object keypoint similarity <https://cocodataset.org/#keypoints-eval>`_
     is computed for each pair of objects, using the extent of the ground truth
@@ -735,8 +753,7 @@ stored in |Detections| format.
 
 For instance segmentation tasks, the ground truth and predicted objects should
 be stored in |Detections| format, and each |Detection| instance should have its
-:attr:`mask <fiftyone.core.labels.Detection.mask>` attribute populated to
-define the extent of the object within its bounding box.
+mask populated to define the extent of the object within its bounding box.
 
 .. note::
 
@@ -1027,16 +1044,22 @@ The example below demonstrates COCO-style detection evaluation on the
    :alt: quickstart-evaluate-detections
    :align: center
 
-mAP and PR curves
-~~~~~~~~~~~~~~~~~
+.. note::
 
-You can compute mean average precision (mAP) and precision-recall (PR) curves
-for your objects by passing the ``compute_mAP=True`` flag to
+    The easiest way to analyze models in FiftyOne is via the
+    :ref:`Model Evaluation panel <app-model-evaluation-panel>`!
+
+mAP, mAR and PR curves
+~~~~~~~~~~~~~~~~~~~~~~
+
+You can compute mean average precision (mAP), mean average recall (mAR), and
+precision-recall (PR) curves for your predictions by passing the
+``compute_mAP=True`` flag to
 :meth:`evaluate_detections() <fiftyone.core.collections.SampleCollection.evaluate_detections>`:
 
 .. note::
 
-    All mAP calculations are performed according to the
+    All mAP and mAR calculations are performed according to the
     `COCO evaluation protocol <https://cocodataset.org/#detection-eval>`_.
 
 .. code-block:: python
@@ -1048,7 +1071,7 @@ for your objects by passing the ``compute_mAP=True`` flag to
     dataset = foz.load_zoo_dataset("quickstart")
     print(dataset)
 
-    # Performs an IoU sweep so that mAP and PR curves can be computed
+    # Performs an IoU sweep so that mAP, mAR, and PR curves can be computed
     results = dataset.evaluate_detections(
         "predictions",
         gt_field="ground_truth",
@@ -1057,6 +1080,9 @@ for your objects by passing the ``compute_mAP=True`` flag to
 
     print(results.mAP())
     # 0.3957
+
+    print(results.mAR())
+    # 0.5210
 
     plot = results.plot_pr_curves(classes=["person", "kite", "car"])
     plot.show()
@@ -1097,12 +1123,6 @@ ground truth objects of different classes.
 .. image:: /images/evaluation/coco_confusion_matrix.png
    :alt: coco-confusion-matrix
    :align: center
-
-.. note::
-
-    Did you know? :ref:`Confusion matrices <confusion-matrices>` can be
-    attached to your |Session| object and dynamically explored using FiftyOne's
-    :ref:`interactive plotting features <confusion-matrix-plots>`!
 
 .. _evaluating-detections-open-images:
 
@@ -1257,6 +1277,11 @@ The example below demonstrates Open Images-style detection evaluation on the
    :alt: quickstart-evaluate-detections-oi
    :align: center
 
+.. note::
+
+    The easiest way to analyze models in FiftyOne is via the
+    :ref:`Model Evaluation panel <app-model-evaluation-panel>`!
+
 mAP and PR curves
 ~~~~~~~~~~~~~~~~~
 
@@ -1330,12 +1355,6 @@ matched with ground truth objects of different classes.
 .. image:: /images/evaluation/oi_confusion_matrix.png
    :alt: oi-confusion-matrix
    :align: center
-
-.. note::
-
-    Did you know? :ref:`Confusion matrices <confusion-matrices>` can be
-    attached to your |Session| object and dynamically explored using FiftyOne's
-    :ref:`interactive plotting features <confusion-matrix-plots>`!
 
 .. _evaluating-detections-activitynet:
 
@@ -1479,6 +1498,11 @@ on the :ref:`ActivityNet 200 dataset <dataset-zoo-activitynet-200>`:
    :alt: activitynet-evaluate-detections
    :align: center
 
+.. note::
+
+    The easiest way to analyze models in FiftyOne is via the
+    :ref:`Model Evaluation panel <app-model-evaluation-panel>`!
+
 mAP and PR curves
 ~~~~~~~~~~~~~~~~~
 
@@ -1597,12 +1621,6 @@ matched with ground truth segments of different classes.
 .. image:: /images/evaluation/activitynet_confusion_matrix.png
    :alt: activitynet-confusion-matrix
    :align: center
-
-.. note::
-
-    Did you know? :ref:`Confusion matrices <confusion-matrices>` can be
-    attached to your |Session| object and dynamically explored using FiftyOne's
-    :ref:`interactive plotting features <confusion-matrix-plots>`!
 
 .. _evaluating-segmentations:
 
@@ -1732,6 +1750,11 @@ masks generated by two DeepLabv3 models (with
 .. image:: /images/evaluation/evaluate_segmentations.gif
    :alt: evaluate-segmentations
    :align: center
+
+.. note::
+
+    The easiest way to analyze models in FiftyOne is via the
+    :ref:`Model Evaluation panel <app-model-evaluation-panel>`!
 
 .. _evaluation-advanced:
 
@@ -1960,21 +1983,226 @@ You can also view frame-level evaluation results as
     Media type:  image
     Num patches: 12112
     Patch fields:
-        id:           fiftyone.core.fields.ObjectIdField
-        filepath:     fiftyone.core.fields.StringField
-        tags:         fiftyone.core.fields.ListField(fiftyone.core.fields.StringField)
-        metadata:     fiftyone.core.fields.EmbeddedDocumentField(fiftyone.core.metadata.ImageMetadata)
-        predictions:  fiftyone.core.fields.EmbeddedDocumentField(fiftyone.core.labels.Detections)
-        detections:   fiftyone.core.fields.EmbeddedDocumentField(fiftyone.core.labels.Detections)
-        sample_id:    fiftyone.core.fields.ObjectIdField
-        frame_id:     fiftyone.core.fields.ObjectIdField
-        frame_number: fiftyone.core.fields.FrameNumberField
-        type:         fiftyone.core.fields.StringField
-        iou:          fiftyone.core.fields.FloatField
-        crowd:        fiftyone.core.fields.BooleanField
+        id:               fiftyone.core.fields.ObjectIdField
+        sample_id:        fiftyone.core.fields.ObjectIdField
+        frame_id:         fiftyone.core.fields.ObjectIdField
+        filepath:         fiftyone.core.fields.StringField
+        frame_number:     fiftyone.core.fields.FrameNumberField
+        tags:             fiftyone.core.fields.ListField(fiftyone.core.fields.StringField)
+        metadata:         fiftyone.core.fields.EmbeddedDocumentField(fiftyone.core.metadata.ImageMetadata)
+        created_at:       fiftyone.core.fields.DateTimeField
+        last_modified_at: fiftyone.core.fields.DateTimeField
+        predictions:      fiftyone.core.fields.EmbeddedDocumentField(fiftyone.core.labels.Detections)
+        detections:       fiftyone.core.fields.EmbeddedDocumentField(fiftyone.core.labels.Detections)
+        type:             fiftyone.core.fields.StringField
+        iou:              fiftyone.core.fields.FloatField
+        crowd:            fiftyone.core.fields.BooleanField
     View stages:
         1. ToFrames(config=None)
         2. ToEvaluationPatches(eval_key='eval', config=None)
+
+.. _custom-evaluation-metrics:
+
+Custom evaluation metrics
+_________________________
+
+You can add custom metrics to your evaluation runs in FiftyOne.
+
+Custom metrics are supported by all FiftyOne evaluation methods, and you can
+compute them via the SDK, or directly
+:ref:`from the App <model-evaluation-panel>` if you're running
+:ref:`FiftyOne Teams <fiftyone-teams>`.
+
+Using custom metrics
+--------------------
+
+The example below shows how to compute a custom metric from the
+`metric-examples <https://github.com/voxel51/fiftyone-plugins/tree/main/plugins/metric-examples>`_
+plugin when evaluating object detections:
+
+.. code-block:: shell
+
+    # Install the example metrics plugin
+    fiftyone plugins download \
+        https://github.com/voxel51/fiftyone-plugins \
+        --plugin-names @voxel51/metric-examples
+
+.. code-block:: python
+    :linenos:
+
+    import fiftyone as fo
+    import fiftyone.zoo as foz
+
+    dataset = foz.load_zoo_dataset("quickstart")
+
+    # Custom metrics are specified via their operator URI
+    metric_uri = "@voxel51/metric-examples/example_metric"
+
+    # Custom metrics can optionally accept kwargs that configure their behavior
+    metric_kwargs = dict(value="spam")
+
+    results = dataset.evaluate_detections(
+        "predictions",
+        gt_field="ground_truth",
+        eval_key="eval",
+        custom_metrics={metric_uri: metric_kwargs},
+    )
+
+    # Custom metrics may populate new fields on each sample
+    dataset.count_values("eval_example_metric")
+    # {'spam': 200}
+
+    # Custom metrics may also compute an aggregate value, which is included in
+    # the run's metrics report
+    results.print_metrics()
+    """
+    accuracy   0.25
+    precision  0.26
+    recall     0.86
+    fscore     0.40
+    support    1735
+    example    spam  # the custom metric
+    """
+
+    #
+    # Launch the app
+    #
+    # Open the Model Evaluation panel and you'll see the "Example metric" in
+    # the Summary table
+    #
+    session = fo.launch_app(dataset)
+
+    # Deleting an evaluation automatically deletes any custom metrics
+    # associated with it
+    dataset.delete_evaluation("eval")
+    assert not dataset.has_field("eval_example_metric")
+
+.. image:: /images/evaluation/custom-evaluation-metric.png
+    :alt: custom-evaluation-metric
+    :align: center
+
+When using metric operators without custom parameters, you can also pass a list
+of operator URI's to the `custom_metrics` parameter:
+
+.. code-block:: python
+    :linenos:
+
+    # Apply two custom metrics to a regression evaluation
+    results = dataset.evaluate_regressions(
+        "predictions",
+        gt_field="ground_truth",
+        eval_key="eval",
+        custom_metrics=[
+            "@voxel51/metric-examples/absolute_error",
+            "@voxel51/metric-examples/squared_error",
+        ],
+    )
+
+You can also add custom metrics to an existing evaluation at any time via
+:meth:`add_custom_metrics() <fiftyone.utils.eval.base.BaseEvaluationResults.add_custom_metrics>`:
+
+.. code-block:: python
+    :linenos:
+
+    # Load an existing evaluation run
+    results = dataset.load_evaluation_results("eval")
+
+    # Add some custom metrics
+    results.add_custom_metrics(
+        [
+            "@voxel51/metric-examples/absolute_error",
+            "@voxel51/metric-examples/squared_error",
+        ]
+    )
+
+Developing custom metrics
+-------------------------
+
+Each custom metric is implemented as an :ref:`operator <developing-operators>`
+that implements the
+:class:`EvaluationMetric <fiftyone.operators.evaluation_metric.EvaluationMetric>`
+interface.
+
+Let's look at an example evaluation metric operator:
+
+.. code-block:: python
+    :linenos:
+
+    import fiftyone.operators as foo
+
+    class ExampleMetric(foo.EvaluationMetric):
+        @property
+        def config(self):
+            return foo.EvaluationMetricConfig(
+                # The metric's URI: f"{plugin_name}/{name}"
+                name="example_metric",  # required
+
+                # The display name of the metric in the Summary table of the
+                # Model Evaluation panel
+                label="Example metric",  # required
+
+                # A description for the operator
+                description="An example evaluation metric",  # optional
+
+                # List of evaluation types that the metrics supports
+                # EG: ["regression", "classification", "detection", ...]
+                # If omitted, the metric may be applied to any evaluation
+                eval_types=None,  # optional
+
+                # An optional custom key under which the metric's aggregate
+                # value is stored and returned in methods like `metrics()`
+                # If omitted, the metric's `name` is used
+                aggregate_key="example",  # optional
+
+                # Metrics are generally not designed to be directly invoked
+                # via the Operator browser, so they should be unlisted
+                unlisted=True,  # required
+            )
+
+        def get_parameters(self, ctx, inputs):
+            """You can implement this method to collect user input for the
+            metric's parameters in the App.
+            """
+            inputs.str(
+                "value",
+                label="Example value",
+                description="The example value to store/return",
+                default="foo",
+                required=True,
+            )
+
+        def compute(self, samples, results, value="foo"):
+            """All metric operators must implement this method. It defines the
+            computation done by the metric and which per-frame and/or
+            per-sample fields store the computed value.
+
+            This method can return None or the aggregate metric value. The
+            aggregrate metric value is included in the result's `metrics()`
+            and displayed in the Summary table of the Model Evaluation panel.
+            """
+            dataset = samples._dataset
+            eval_key = results.key
+            metric_field = f"{eval_key}_{self.config.name}"
+            dataset.add_sample_field(metric_field, fo.StringField)
+            samples.set_field(metric_field, value).save()
+
+            return value
+
+        def get_fields(self, samples, config, eval_key):
+            """Lists the fields that were populated by the evaluation metric
+            with the given key, if any.
+            """
+            return [f"{eval_key}_{self.config.name}"]
+
+.. note::
+
+    By convention, evaluation metrics should include `f"{eval_key}"` in any
+    sample fields that they populate. If your metric populates fields whose
+    names do not contain the evaluation key, then you must also implement
+    :meth:`rename() <fiftyone.operators.evaluation_metric.EvaluationMetric.rename>`
+    and
+    :meth:`cleanup() <fiftyone.operators.evaluation_metric.EvaluationMetric.cleanup>`
+    so that they are properly handled when renaming/deleting evaluation runs.
 
 .. _custom-evaluation-backends:
 

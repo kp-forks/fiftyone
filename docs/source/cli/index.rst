@@ -116,7 +116,6 @@ Launch a FiftyOne quickstart.
       -A ADDRESS, --address ADDRESS
                             the address (server name) to use
       -r, --remote          whether to launch a remote App session
-      -a, --desktop         whether to launch a desktop App instance
       -w WAIT, --wait WAIT  the number of seconds to wait for a new App
                             connection before returning if all connections are
                             lost. If negative, the process will wait forever,
@@ -815,7 +814,7 @@ FiftyOne deployments.
 FiftyOne operators
 ------------------
 
-Tools for working with FiftyOne operators.
+Tools for working with FiftyOne operators and panels.
 
 .. code-block:: text
 
@@ -831,53 +830,67 @@ Tools for working with FiftyOne operators.
 
     available commands:
       {list,info}
-        list       List operators that you've downloaded or created locally.
-        info       Prints information about operators that you've downloaded or created
+        list       List operators and panels that are installed locally.
+        info       Prints information about operators and panels that are installed locally.
 
 .. _cli-fiftyone-operators-list:
 
 List operators
 ~~~~~~~~~~~~~~
 
-List operators that you've downloaded or created locally.
+List operators and panels that are installed locally.
 
 .. code-block:: text
 
-    fiftyone operators list [-h] [-e] [-d] [-n]
+    fiftyone operators list [-h] [-e] [-d] [-b] [-c] [-o] [-p] [-n]
 
 **Arguments**
 
 .. code-block:: text
 
     optional arguments:
-      -h, --help        show this help message and exit
-      -e, --enabled     only show enabled operators
-      -d, --disabled    only show disabled operators
-      -n, --names-only  only show names
+      -h, --help            show this help message and exit
+      -e, --enabled         only show enabled operators and panels
+      -d, --disabled        only show disabled operators and panels
+      -b, --builtins-only   only show builtin operators and panels
+      -c, --no-builtins     only show non-builtin operators and panels
+      -o, --operators-only  only show operators
+      -p, --panels-only     only show panels
+      -n, --names-only      only show names
 
 **Examples**
 
 .. code-block:: shell
 
-    # List all locally available operators
+    # List all available operators and panels
     fiftyone operators list
 
 .. code-block:: shell
 
-    # List enabled operators
+    # List enabled operators and panels
     fiftyone operators list --enabled
 
 .. code-block:: shell
 
-    # List disabled operators
+    # List disabled operators and panels
     fiftyone operators list --disabled
+
+.. code-block:: shell
+
+    # List non-builtin operators and panels
+    fiftyone operators list --no-builtins
+
+.. code-block:: shell
+
+    # List panels
+    fiftyone operators list --panels-only
 
 .. _cli-fiftyone-operators-info:
 
 Operator info
 ~~~~~~~~~~~~~
 
-Prints information about operators that you've downloaded or created locally.
+Prints information about operators and panels that are installed locally.
 
 .. code-block:: text
 
@@ -888,7 +901,7 @@ Prints information about operators that you've downloaded or created locally.
 .. code-block:: text
 
     positional arguments:
-      URI         the operator URI
+      URI         the operator or panel URI
 
     optional arguments:
       -h, --help  show this help message and exit
@@ -897,7 +910,7 @@ Prints information about operators that you've downloaded or created locally.
 
 .. code-block:: shell
 
-    # Prints information about an operator
+    # Prints information about an operator or panel
     fiftyone operators info <uri>
 
 .. _cli-fiftyone-delegated:
@@ -983,9 +996,9 @@ List delegated operations.
                             only list operations for this dataset
       -s STATE, --state STATE
                             only list operations with this state. Supported
-                            values are ('QUEUED', 'RUNNING', 'COMPLETED', 'FAILED')
+                            values are ('SCHEDULED', 'QUEUED', 'RUNNING', 'COMPLETED', 'FAILED')
       --sort-by SORT_BY     how to sort the operations. Supported values are
-                            ('QUEUED_AT', 'STARTED_AT', COMPLETED_AT', 'FAILED_AT', 'OPERATOR')
+                            ('SCHEDULED_AT', 'QUEUED_AT', 'STARTED_AT', COMPLETED_AT', 'FAILED_AT', 'OPERATOR')
       --reverse             whether to sort in reverse order
       -l LIMIT, --limit LIMIT
                             a maximum number of operations to show
@@ -1163,8 +1176,8 @@ Tools for working with FiftyOne plugins.
 
     available commands:
       {list,info,download,requirements,create,enable,disable,delete}
-        list                List plugins that you've downloaded or created locally.
-        info                Prints information about plugins that you've downloaded or created
+        list                List plugins that are installed locally.
+        info                Prints information about plugins that are installed locally.
         download            Download plugins from the web.
         requirements        Handles package requirements for plugins.
         create              Creates or initializes a plugin.
@@ -1177,21 +1190,23 @@ Tools for working with FiftyOne plugins.
 List plugins
 ~~~~~~~~~~~~
 
-List plugins that you've downloaded or created locally.
+List plugins that are installed locally.
 
 .. code-block:: text
 
-    fiftyone plugins list [-h] [-e] [-d] [-n]
+    fiftyone plugins list [-h] [-e] [-d] [-b] [-c] [-n]
 
 **Arguments**
 
 .. code-block:: text
 
     optional arguments:
-      -h, --help        show this help message and exit
-      -e, --enabled     only show enabled plugins
-      -d, --disabled    only show disabled plugins
-      -n, --names-only  only show plugin names
+      -h, --help           show this help message and exit
+      -e, --enabled        only show enabled plugins
+      -d, --disabled       only show disabled plugins
+      -b, --builtins-only  only show builtin plugins
+      -c, --no-builtins    only show non-builtin plugins
+      -n, --names-only     only show plugin names
 
 **Examples**
 
@@ -1210,23 +1225,28 @@ List plugins that you've downloaded or created locally.
     # List disabled plugins
     fiftyone plugins list --disabled
 
+.. code-block:: shell
+
+    # List non-builtin plugins
+    fiftyone plugins list --no-builtins
+
 .. _cli-fiftyone-plugins-info:
 
 Plugin info
 ~~~~~~~~~~~
 
-List plugins that you've downloaded or created locally.
+List plugins that are installed locally.
 
 .. code-block:: text
 
-    fiftyone plugins info [-h] NAME
+    fiftyone plugins info [-h] NAME_OR_DIR
 
 **Arguments**
 
 .. code-block:: text
 
     positional arguments:
-      NAME        the plugin name
+      NAME_OR_DIR  the plugin name or directory
 
     optional arguments:
       -h, --help  show this help message and exit
@@ -1237,6 +1257,9 @@ List plugins that you've downloaded or created locally.
 
     # Prints information about a plugin
     fiftyone plugins info <name>
+
+    # Prints information about a plugin in a given directory
+    fiftyone plugins info <dir>
 
 .. _cli-fiftyone-plugins-download:
 
@@ -1880,7 +1903,6 @@ Launch the FiftyOne App.
       -A ADDRESS, --address ADDRESS
                             the address (server name) to use
       -r, --remote          whether to launch a remote App session
-      -a, --desktop         whether to launch a desktop App instance
       -b BROWSER, --browser BROWSER
                             the browser to use to open the App
       -w WAIT, --wait WAIT  the number of seconds to wait for a new App
@@ -1907,12 +1929,7 @@ Launch the FiftyOne App.
 
 .. code-block:: shell
 
-    # Launch a desktop App session
-    fiftyone app launch ... --desktop
-
-.. code-block:: shell
-
-    # Launch a desktop App session
+    # Launch an App session with a specific browser
     fiftyone app launch ... --browser <name>
 
 .. _cli-fiftyone-app-view:
@@ -1959,7 +1976,6 @@ View datasets in the FiftyOne App without persisting them to the database.
       -A ADDRESS, --address ADDRESS
                             the address (server name) to use
       -r, --remote          whether to launch a remote App session
-      -a, --desktop         whether to launch a desktop App instance
       -w WAIT, --wait WAIT  the number of seconds to wait for a new App
                             connection before returning if all connections are
                             lost. If negative, the process will wait forever,
@@ -2009,11 +2025,6 @@ View datasets in the FiftyOne App without persisting them to the database.
 
     # View the dataset in a remote App session
     fiftyone app view ... --remote
-
-.. code-block:: shell
-
-    # View the dataset using the desktop App
-    fiftyone app view ... --desktop
 
 .. code-block:: shell
 
@@ -2237,12 +2248,13 @@ Tools for working with the FiftyOne Dataset Zoo.
       --all-help            show help recursively and exit
 
     available commands:
-      {list,find,info,download,load}
+      {list,find,info,download,load,delete}
         list                List datasets in the FiftyOne Dataset Zoo.
-        find                Locate the downloaded zoo dataset on disk.
-        info                Print information about downloaded zoo datasets.
+        find                Locate a downloaded zoo dataset on disk.
+        info                Print information about datasets in the FiftyOne Dataset Zoo.
         download            Download zoo datasets.
         load                Load zoo datasets as persistent FiftyOne datasets.
+        delete              Deletes the local copy of the zoo dataset on disk.
 
 .. _cli-fiftyone-zoo-datasets-list:
 
@@ -2254,7 +2266,6 @@ List datasets in the FiftyOne Dataset Zoo.
 .. code-block:: text
 
     fiftyone zoo datasets list [-h] [-n] [-d] [-s SOURCE] [-t TAGS]
-                               [-b BASE_DIR]
 
 **Arguments**
 
@@ -2268,9 +2279,6 @@ List datasets in the FiftyOne Dataset Zoo.
       -s SOURCE, --source SOURCE
                             only show datasets available from the specified source
       -t TAGS, --tags TAGS  only show datasets with the specified tag or list,of,tags
-      -b BASE_DIR, --base-dir BASE_DIR
-                            a custom base directory in which to search for
-                            downloaded datasets
 
 **Examples**
 
@@ -2281,7 +2289,7 @@ List datasets in the FiftyOne Dataset Zoo.
 
 .. code-block:: shell
 
-    # List available datasets (names only)
+    # List available dataset names
     fiftyone zoo datasets list --names-only
 
 .. code-block:: shell
@@ -2304,18 +2312,18 @@ List datasets in the FiftyOne Dataset Zoo.
 Find zoo datasets on disk
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Locate the downloaded zoo dataset on disk.
+Locate a downloaded zoo dataset on disk.
 
 .. code-block:: text
 
-    fiftyone zoo datasets find [-h] [-s SPLIT] NAME
+    fiftyone zoo datasets find [-h] [-s SPLIT] NAME_OR_URL
 
 **Arguments**
 
 .. code-block:: text
 
     positional arguments:
-      NAME        the name of the dataset
+      NAME_OR_URL           the name or remote location of the dataset
 
     optional arguments:
       -h, --help            show this help message and exit
@@ -2325,12 +2333,18 @@ Locate the downloaded zoo dataset on disk.
 
 .. code-block:: shell
 
-    # Print the location of the downloaded zoo dataset on disk
+    # Print the location of a downloaded zoo dataset on disk
     fiftyone zoo datasets find <name>
 
 .. code-block:: shell
 
-    # Print the location of a specific split of the dataset
+    # Print the location of a remotely-sourced zoo dataset on disk
+    fiftyone zoo datasets find https://github.com/<user>/<repo>
+    fiftyone zoo datasets find <url>
+
+.. code-block:: shell
+
+    # Print the location of a specific split of a dataset
     fiftyone zoo datasets find <name> --split <split>
 
 .. _cli-fiftyone-zoo-datasets-info:
@@ -2342,20 +2356,17 @@ Print information about datasets in the FiftyOne Dataset Zoo.
 
 .. code-block:: text
 
-    fiftyone zoo datasets info [-h] [-b BASE_DIR] NAME
+    fiftyone zoo datasets info [-h] NAME_OR_URL
 
 **Arguments**
 
 .. code-block:: text
 
     positional arguments:
-      NAME                  the name of the dataset
+      NAME_OR_URL           the name or remote location of the dataset
 
     optional arguments:
       -h, --help            show this help message and exit
-      -b BASE_DIR, --base-dir BASE_DIR
-                            a custom base directory in which to search for
-                            downloaded datasets
 
 **Examples**
 
@@ -2364,34 +2375,52 @@ Print information about datasets in the FiftyOne Dataset Zoo.
     # Print information about a zoo dataset
     fiftyone zoo datasets info <name>
 
+.. code-block:: shell
+
+    # Print information about a remote zoo dataset
+    fiftyone zoo datasets info https://github.com/<user>/<repo>
+    fiftyone zoo datasets info <url>
+
 .. _cli-fiftyone-zoo-datasets-download:
 
 Download zoo datasets
 ~~~~~~~~~~~~~~~~~~~~~
 
-Download datasets from the FiftyOne Dataset Zoo.
+Download zoo datasets.
+
+When downloading remotely-sourced zoo datasets, you can provide any of the
+following formats:
+
+-   a GitHub repo URL like ``https://github.com/<user>/<repo>``
+-   a GitHub ref like ``https://github.com/<user>/<repo>/tree/<branch>`` or
+    ``https://github.com/<user>/<repo>/commit/<commit>``
+-   a GitHub ref string like ``<user>/<repo>[/<ref>]``
+-   a publicly accessible URL of an archive (eg zip or tar) file
+
+.. note::
+
+    To download from a private GitHub repository that you have access to,
+    provide your GitHub personal access token by setting the ``GITHUB_TOKEN``
+    environment variable.
 
 .. code-block:: text
 
     fiftyone zoo datasets download [-h] [-s SPLITS [SPLITS ...]]
-                                   [-d DATASET_DIR]
                                    [-k KEY=VAL [KEY=VAL ...]]
-                                   NAME
+                                   NAME_OR_URL
 
 **Arguments**
 
 .. code-block:: text
 
     positional arguments:
-      NAME                  the name of the dataset
+      NAME_OR_URL           the name or remote location of the dataset
 
     optional arguments:
 
       -h, --help            show this help message and exit
       -s SPLITS [SPLITS ...], --splits SPLITS [SPLITS ...]
                             the dataset splits to download
-      -d DATASET_DIR, --dataset-dir DATASET_DIR
-                            a custom directory to which to download the dataset
       -k KEY=VAL [KEY=VAL ...], --kwargs KEY=VAL [KEY=VAL ...]
                             optional dataset-specific keyword arguments for
                             `fiftyone.zoo.download_zoo_dataset()`
@@ -2400,18 +2429,19 @@ Download datasets from the FiftyOne Dataset Zoo.
 
 .. code-block:: shell
 
-    # Download the entire zoo dataset
+    # Download a zoo dataset
     fiftyone zoo datasets download <name>
 
 .. code-block:: shell
 
-    # Download the specified split(s) of the zoo dataset
-    fiftyone zoo datasets download <name> --splits <split1> ...
+    # Download a remotely-sourced zoo dataset
+    fiftyone zoo datasets download https://github.com/<user>/<repo>
+    fiftyone zoo datasets download <url>
 
 .. code-block:: shell
 
-    # Download the zoo dataset to a custom directory
-    fiftyone zoo datasets download <name> --dataset-dir <dataset-dir>
+    # Download the specified split(s) of a zoo dataset
+    fiftyone zoo datasets download <name> --splits <split1> ...
 
 .. code-block:: shell
 
@@ -2426,19 +2456,33 @@ Load zoo datasets
 
 Load zoo datasets as persistent FiftyOne datasets.
 
+When loading remotely-sourced zoo datasets, you can provide any of the
+following formats:
+
+-   a GitHub repo URL like ``https://github.com/<user>/<repo>``
+-   a GitHub ref like ``https://github.com/<user>/<repo>/tree/<branch>`` or
+    ``https://github.com/<user>/<repo>/commit/<commit>``
+-   a GitHub ref string like ``<user>/<repo>[/<ref>]``
+-   a publicly accessible URL of an archive (eg zip or tar) file
+
+.. note::
+
+    To download from a private GitHub repository that you have access to,
+    provide your GitHub personal access token by setting the ``GITHUB_TOKEN``
+    environment variable.
+
 .. code-block:: text
 
     fiftyone zoo datasets load [-h] [-s SPLITS [SPLITS ...]]
-                               [-n DATASET_NAME] [-d DATASET_DIR]
-                               [-k KEY=VAL [KEY=VAL ...]]
-                               NAME
+                               [-n DATASET_NAME] [-k KEY=VAL [KEY=VAL ...]]
+                               NAME_OR_URL
 
 **Arguments**
 
 .. code-block:: text
 
     positional arguments:
-      NAME                  the name of the dataset
+      NAME_OR_URL           the name or remote location of the dataset
 
     optional arguments:
       -h, --help            show this help message and exit
@@ -2446,8 +2490,6 @@ Load zoo datasets as persistent FiftyOne datasets.
                             the dataset splits to load
       -n DATASET_NAME, --dataset-name DATASET_NAME
                             a custom name to give the FiftyOne dataset
-      -d DATASET_DIR, --dataset-dir DATASET_DIR
-                            a custom directory in which the dataset is downloaded
       -k KEY=VAL [KEY=VAL ...], --kwargs KEY=VAL [KEY=VAL ...]
                             additional dataset-specific keyword arguments for
                             `fiftyone.zoo.load_zoo_dataset()`
@@ -2461,18 +2503,19 @@ Load zoo datasets as persistent FiftyOne datasets.
 
 .. code-block:: shell
 
-    # Load the specified split(s) of the zoo dataset
+    # Load a remotely-sourced zoo dataset
+    fiftyone zoo datasets load https://github.com/<user>/<repo>
+    fiftyone zoo datasets load <url>
+
+.. code-block:: shell
+
+    # Load the specified split(s) of a zoo dataset
     fiftyone zoo datasets load <name> --splits <split1> ...
 
 .. code-block:: shell
 
-    # Load the zoo dataset with a custom name
+    # Load a zoo dataset with a custom name
     fiftyone zoo datasets load <name> --dataset-name <dataset-name>
-
-.. code-block:: shell
-
-    # Load the zoo dataset from a custom directory
-    fiftyone zoo datasets load <name> --dataset-dir <dataset-dir>
 
 .. code-block:: shell
 
@@ -2531,7 +2574,7 @@ Tools for working with the FiftyOne Model Zoo.
 .. code-block:: text
 
     fiftyone zoo models [-h] [--all-help]
-                        {list,find,info,requirements,download,apply,embed,delete}
+                        {list,find,info,requirements,download,apply,embed,delete,list-sources,register-source,delete-source}
                         ...
 
 **Arguments**
@@ -2543,8 +2586,8 @@ Tools for working with the FiftyOne Model Zoo.
       --all-help            show help recursively and exit
 
     available commands:
-      {list,find,info,requirements,download,apply,embed,delete}
-        list                List datasets in the FiftyOne Model Zoo.
+      {list,find,info,requirements,download,apply,embed,delete,register-source,delete-source}
+        list                List models in the FiftyOne Model Zoo.
         find                Locate the downloaded zoo model on disk.
         info                Print information about models in the FiftyOne Model Zoo.
         requirements        Handles package requirements for zoo models.
@@ -2552,17 +2595,20 @@ Tools for working with the FiftyOne Model Zoo.
         apply               Apply zoo models to datasets.
         embed               Generate embeddings for datasets with zoo models.
         delete              Deletes the local copy of the zoo model on disk.
+        list-sources        Lists remote zoo model sources that are registered locally.
+        register-source     Registers a remote source of zoo models.
+        delete-source       Deletes the remote source and all downloaded models associated with it.
 
 .. _cli-fiftyone-zoo-models-list:
 
 List models in zoo
 ~~~~~~~~~~~~~~~~~~
 
-List datasets in the FiftyOne Model Zoo.
+List models in the FiftyOne Model Zoo.
 
 .. code-block:: text
 
-    fiftyone zoo models list [-h] [-n] [-d] [-t TAG]
+    fiftyone zoo models list [-h] [-n] [-d] [-t TAGS] [-s SOURCE]
 
 **Arguments**
 
@@ -2574,6 +2620,8 @@ List datasets in the FiftyOne Model Zoo.
       -d, --downloaded-only
                             only show models that have been downloaded
       -t TAGS, --tags TAGS  only show models with the specified tag or list,of,tags
+      -s SOURCE, --source SOURCE
+                            only show models available from the specified remote source
 
 **Examples**
 
@@ -2596,6 +2644,11 @@ List datasets in the FiftyOne Model Zoo.
 
     # List available models with the given tag
     fiftyone zoo models list --tags <tag>
+
+.. code-block:: shell
+
+    # List available models from the given remote source
+    fiftyone zoo models list --source <source>
 
 .. _cli-fiftyone-zoo-models-find:
 
@@ -2705,28 +2758,51 @@ Download zoo models
 
 Download zoo models.
 
+When downloading remotely-sourced zoo models, you can provide any of the
+following:
+
+-   a GitHub repo URL like ``https://github.com/<user>/<repo>``
+-   a GitHub ref like ``https://github.com/<user>/<repo>/tree/<branch>`` or
+    ``https://github.com/<user>/<repo>/commit/<commit>``
+-   a GitHub ref string like ``<user>/<repo>[/<ref>]``
+
+.. note::
+
+    To download from a private GitHub repository that you have access to,
+    provide your GitHub personal access token by setting the ``GITHUB_TOKEN``
+    environment variable.
+
 .. code-block:: text
 
-    fiftyone zoo models download [-h] [-f] NAME
+    fiftyone zoo models download [-h] [-n MODEL_NAME] [-o] NAME_OR_URL
 
 **Arguments**
 
 .. code-block:: text
 
     positional arguments:
-      NAME                  the name of the zoo model
+      NAME_OR_URL           the name or remote location of the model
 
     optional arguments:
       -h, --help            show this help message and exit
-      -f, --force           whether to force download the model if it is already
-                            downloaded
+      -n MODEL_NAME, --model-name MODEL_NAME
+                            the specific model to download, if `name_or_url` is
+                            a remote source
+      -o, --overwrite       whether to overwrite any existing model files
 
 **Examples**
 
 .. code-block:: shell
 
-    # Download the zoo model
+    # Download a zoo model
     fiftyone zoo models download <name>
+
+.. code-block:: shell
+
+    # Download a remotely-sourced zoo model
+    fiftyone zoo models download https://github.com/<user>/<repo> \
+        --model-name <name>
+    fiftyone zoo models download <url> --model-name <name>
 
 .. _cli-fiftyone-zoo-models-apply:
 
@@ -2735,23 +2811,41 @@ Apply zoo models to datasets
 
 Apply zoo models to datasets.
 
+When applying remotely-sourced zoo models, you can provide any of the following
+formats:
+
+-   a GitHub repo URL like ``https://github.com/<user>/<repo>``
+-   a GitHub ref like ``https://github.com/<user>/<repo>/tree/<branch>`` or
+    ``https://github.com/<user>/<repo>/commit/<commit>``
+-   a GitHub ref string like ``<user>/<repo>[/<ref>]``
+-   a publicly accessible URL of an archive (eg zip or tar) file
+
+.. note::
+
+    To download from a private GitHub repository that you have access to,
+    provide your GitHub personal access token by setting the ``GITHUB_TOKEN``
+    environment variable.
+
 .. code-block:: text
 
-    fiftyone zoo models apply [-h] [-b BATCH_SIZE] [-t THRESH] [-l] [-i]
-                              [--error-level LEVEL]
-                              MODEL_NAME DATASET_NAME LABEL_FIELD
+    fiftyone zoo models apply [-h] [-n MODEL_NAME] [-b BATCH_SIZE] [-t THRESH]
+                              [-l] [-i] [--error-level LEVEL]
+                              NAME_OR_URL DATASET_NAME LABEL_FIELD
 
 **Arguments**
 
 .. code-block:: text
 
     positional arguments:
-      MODEL_NAME            the name of the zoo model
+      NAME_OR_URL           the name or remote location of the zoo model
       DATASET_NAME          the name of the FiftyOne dataset to process
       LABEL_FIELD           the name of the field in which to store the predictions
 
     optional arguments:
       -h, --help            show this help message and exit
+      -n MODEL_NAME, --model-name MODEL_NAME
+                            the specific model to apply, if `name_or_url` is a
+                            remote source
       -b BATCH_SIZE, --batch-size BATCH_SIZE
                             an optional batch size to use during inference
       -t THRESH, --confidence-thresh THRESH
@@ -2766,8 +2860,16 @@ Apply zoo models to datasets.
 
 .. code-block:: shell
 
-    # Apply the zoo model to the dataset
+    # Apply a zoo model to a dataset
     fiftyone zoo models apply <model-name> <dataset-name> <label-field>
+
+.. code-block:: shell
+
+    # Apply a remotely-sourced zoo model to a dataset
+    fiftyone zoo models apply https://github.com/<user>/<repo> \
+        <dataset-name> <label-field> --model-name <model-name>
+    fiftyone zoo models apply <url> \
+        <dataset-name> <label-field> --model-name <model-name>
 
 .. code-block:: shell
 
@@ -2785,23 +2887,41 @@ Generate embeddings with zoo models
 
 Generate embeddings for datasets with zoo models.
 
+When applying remotely-sourced zoo models, you can provide any of the following
+formats:
+
+-   a GitHub repo URL like ``https://github.com/<user>/<repo>``
+-   a GitHub ref like ``https://github.com/<user>/<repo>/tree/<branch>`` or
+    ``https://github.com/<user>/<repo>/commit/<commit>``
+-   a GitHub ref string like ``<user>/<repo>[/<ref>]``
+-   a publicly accessible URL of an archive (eg zip or tar) file
+
+.. note::
+
+    To download from a private GitHub repository that you have access to,
+    provide your GitHub personal access token by setting the ``GITHUB_TOKEN``
+    environment variable.
+
 .. code-block:: text
 
-    fiftyone zoo models embed [-h] [-b BATCH_SIZE] [-i]
+    fiftyone zoo models embed [-h] [-n MODEL_NAME] [-b BATCH_SIZE] [-i]
                               [--error-level LEVEL]
-                              MODEL_NAME DATASET_NAME EMBEDDINGS_FIELD
+                              NAME_OR_URL DATASET_NAME EMBEDDINGS_FIELD
 
 **Arguments**
 
 .. code-block:: text
 
     positional arguments:
-      MODEL_NAME            the name of the zoo model
+      NAME_OR_URL           the name or remote location of the zoo model
       DATASET_NAME          the name of the FiftyOne dataset to process
       EMBEDDINGS_FIELD      the name of the field in which to store the embeddings
 
     optional arguments:
       -h, --help            show this help message and exit
+      -n MODEL_NAME, --model-name MODEL_NAME
+                            the specific model to apply, if `name_or_url` is a
+                            remote source
       -b BATCH_SIZE, --batch-size BATCH_SIZE
                             an optional batch size to use during inference
       -i, --install         install any requirements for the zoo model
@@ -2812,8 +2932,16 @@ Generate embeddings for datasets with zoo models.
 
 .. code-block:: shell
 
-    # Generate embeddings for the dataset with the zoo model
+    # Generate embeddings for a dataset with a zoo model
     fiftyone zoo models embed <model-name> <dataset-name> <embeddings-field>
+
+.. code-block:: shell
+
+    # Generate embeddings for a dataset with a remotely-sourced zoo model
+    fiftyone zoo models embed https://github.com/<user>/<repo> \
+        <dataset-name> <embeddings-field> --model-name <model-name>
+    fiftyone zoo models embed <url> \
+        <dataset-name> <embeddings-field> --model-name <model-name>
 
 .. _cli-fiftyone-zoo-models-delete:
 
@@ -2842,3 +2970,102 @@ Deletes the local copy of the zoo model on disk.
 
     # Delete the zoo model from disk
     fiftyone zoo models delete <name>
+
+.. _cli-fiftyone-zoo-models-list-sources:
+
+List zoo model sources
+~~~~~~~~~~~~~~~~~~~~~~
+
+Lists remote zoo model sources that are registered locally.
+
+.. code-block:: text
+
+    fiftyone zoo models list-sources [-h]
+
+**Examples**
+
+.. code-block:: shell
+
+    # Lists the registered remote zoo model sources
+    fiftyone zoo models list-sources
+
+.. _cli-fiftyone-zoo-models-register-source:
+
+Register zoo model sources
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Registers a remote source of zoo models.
+
+You can provide any of the following formats:
+
+-   a GitHub repo URL like ``https://github.com/<user>/<repo>``
+-   a GitHub ref like ``https://github.com/<user>/<repo>/tree/<branch>`` or
+    ``https://github.com/<user>/<repo>/commit/<commit>``
+-   a GitHub ref string like ``<user>/<repo>[/<ref>]``
+-   a publicly accessible URL of an archive (eg zip or tar) file
+
+.. note::
+
+    To download from a private GitHub repository that you have access to,
+    provide your GitHub personal access token by setting the ``GITHUB_TOKEN``
+    environment variable.
+
+.. code-block:: text
+
+    fiftyone zoo models register-source [-h] [-o] URL_OR_GH_REPO
+
+**Arguments**
+
+.. code-block:: text
+
+    positional arguments:
+      URL_OR_GH_REPO   the remote source to register
+
+    optional arguments:
+      -h, --help       show this help message and exit
+      -o, --overwrite  whether to overwrite any existing files
+
+**Examples**
+
+.. code-block:: shell
+
+    # Register a remote zoo model source
+    fiftyone zoo models register-source https://github.com/<user>/<repo>
+    fiftyone zoo models register-source <url>
+
+.. _cli-fiftyone-zoo-models-delete-source:
+
+Delete zoo model sources
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+Deletes the remote source and all downloaded models associated with it.
+
+You can provide any of the following formats:
+
+-   a GitHub repo URL like ``https://github.com/<user>/<repo>``
+-   a GitHub ref like ``https://github.com/<user>/<repo>/tree/<branch>`` or
+    ``https://github.com/<user>/<repo>/commit/<commit>``
+-   a GitHub ref string like ``<user>/<repo>[/<ref>]``
+-   a publicly accessible URL of an archive (eg zip or tar) file
+
+.. code-block:: text
+
+    fiftyone zoo models delete-source [-h] URL_OR_GH_REPO
+
+**Arguments**
+
+.. code-block:: text
+
+    positional arguments:
+      URL_OR_GH_REPO   the remote source to delete
+
+    optional arguments:
+      -h, --help       show this help message and exit
+
+**Examples**
+
+.. code-block:: shell
+
+    # Delete a remote zoo model source
+    fiftyone zoo models delete-source https://github.com/<user>/<repo>
+    fiftyone zoo models delete-source <url>

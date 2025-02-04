@@ -1,35 +1,36 @@
 /**
- * Copyright 2017-2024, Voxel51, Inc.
+ * Copyright 2017-2025, Voxel51, Inc.
  */
 import { NONFINITES } from "@fiftyone/utilities";
 
 import { INFO_COLOR } from "../constants";
-import { OverlayMask } from "../numpy";
 import { BaseState, BoundingBox, Coordinates, NONFINITE } from "../state";
 import { distanceFromLineSegment } from "../util";
-import { CONTAINS, CoordinateOverlay, PointInfo, RegularLabel } from "./base";
+import {
+  CONTAINS,
+  CoordinateOverlay,
+  LabelMask,
+  PointInfo,
+  RegularLabel,
+} from "./base";
 import { t } from "./util";
 
 export interface DetectionLabel extends RegularLabel {
-  mask?: {
-    data: OverlayMask;
-    image: ArrayBuffer;
-  };
+  mask?: LabelMask;
   bounding_box: BoundingBox;
 
   // valid for 3D bounding boxes
   dimensions?: [number, number, number];
   location?: [number, number, number];
   rotation?: [number, number, number];
+  convexHull?: Coordinates[];
 }
 
 export default class DetectionOverlay<
   State extends BaseState
 > extends CoordinateOverlay<State, DetectionLabel> {
-  private imageData: ImageData;
   private is3D: boolean;
   private labelBoundingBox: BoundingBox;
-  private canvas: HTMLCanvasElement;
 
   constructor(field, label) {
     super(field, label);
@@ -38,32 +39,6 @@ export default class DetectionOverlay<
       this.is3D = true;
     } else {
       this.is3D = false;
-    }
-
-    if (this.label.mask) {
-      const [height, width] = this.label.mask.data.shape;
-
-      if (!height || !width) {
-        return;
-      }
-
-      this.canvas = document.createElement("canvas");
-      this.canvas.width = width;
-      this.canvas.height = height;
-      this.imageData = new ImageData(
-        new Uint8ClampedArray(this.label.mask.image),
-        width,
-        height
-      );
-      const maskCtx = this.canvas.getContext("2d");
-      maskCtx.imageSmoothingEnabled = false;
-      maskCtx.clearRect(
-        0,
-        0,
-        this.label.mask.data.shape[1],
-        this.label.mask.data.shape[0]
-      );
-      maskCtx.putImageData(this.imageData, 0, 0);
     }
   }
 
@@ -87,7 +62,7 @@ export default class DetectionOverlay<
     this.label.mask && this.drawMask(ctx, state);
     !state.config.thumbnail && this.drawLabelText(ctx, state);
 
-    if (this.is3D) {
+    if (this.is3D && this.label.dimensions && this.label.location) {
       this.fillRectFor3d(ctx, state, this.getColor(state));
     } else {
       this.strokeRect(ctx, state, this.getColor(state));
@@ -168,7 +143,7 @@ export default class DetectionOverlay<
   }
 
   private drawMask(ctx: CanvasRenderingContext2D, state: Readonly<State>) {
-    if (!this.canvas) {
+    if (!this.label.mask?.bitmap) {
       return;
     }
 
@@ -176,8 +151,9 @@ export default class DetectionOverlay<
     const [x, y] = t(state, tlx, tly);
     const tmp = ctx.globalAlpha;
     ctx.globalAlpha = state.options.alpha;
+    ctx.imageSmoothingEnabled = false;
     ctx.drawImage(
-      this.canvas,
+      this.label.mask.bitmap,
       x,
       y,
       w * state.canvasBBox[2],
@@ -229,48 +205,32 @@ export default class DetectionOverlay<
     state: Readonly<State>,
     color: string
   ) {
-    const [tlx, tly, w, h] = this.label.bounding_box;
-    const [boxCenterX, boxCenterY] = t(state, tlx + w / 2, tly + h / 2);
-
-    const hasRotationAroundZAxis =
-      this.label.rotation && this.label.rotation[2] !== 0;
-
-    if (hasRotationAroundZAxis) {
-      // translate to center of box before rotating
-      ctx.translate(boxCenterX, boxCenterY);
-      // modifies current transformation matrix so that all subsequent drawings are rotated
-      ctx.rotate(-this.label.rotation[2]);
-      // translate back to undo the translation into the center of the box
-      ctx.translate(-boxCenterX, -boxCenterY);
-    }
+    const convexHull = this.label.convexHull;
 
     const previousAlpha = ctx.globalAlpha;
-    ctx.beginPath();
     // use double stoke width to make the box more visible
     ctx.lineWidth = state.strokeWidth * 2;
     ctx.fillStyle = color;
     ctx.strokeStyle = color;
-    ctx.moveTo(...t(state, tlx, tly));
-    ctx.lineTo(...t(state, tlx + w, tly));
-    ctx.lineTo(...t(state, tlx + w, tly + h));
-    ctx.lineTo(...t(state, tlx, tly + h));
+
+    ctx.beginPath();
+
+    // draw a polyline that defines the convex hull of the projected corners and fill it
+    ctx.moveTo(...t(state, convexHull[0][0], convexHull[0][1]));
+    for (let i = 1; i < convexHull.length; i++) {
+      ctx.lineTo(...t(state, convexHull[i][0], convexHull[i][1]));
+    }
+
     ctx.closePath();
     ctx.stroke();
 
     // fill with some transparency
-    ctx.globalAlpha = state.options.alpha * 0.5;
-    ctx.fillRect(...t(state, tlx, tly), w, h);
+    ctx.globalAlpha = state.options.alpha * 0.3;
+
     ctx.fill();
 
     // restore previous alpha
     ctx.globalAlpha = previousAlpha;
-
-    if (hasRotationAroundZAxis) {
-      // undo rotation to reset current transformation matrix
-      ctx.translate(boxCenterX, boxCenterY);
-      ctx.rotate(this.label.rotation[2]);
-      ctx.translate(-boxCenterX, -boxCenterY);
-    }
   }
 
   private strokeRect(
@@ -299,6 +259,10 @@ export default class DetectionOverlay<
     const ow = state.strokeWidth / state.canvasBBox[2];
     const oh = state.strokeWidth / state.canvasBBox[3];
     return [(bx - ow) * w, (by - oh) * h, (bw + ow * 2) * w, (bh + oh * 2) * h];
+  }
+
+  public cleanup(): void {
+    this.label.mask?.bitmap?.close();
   }
 }
 

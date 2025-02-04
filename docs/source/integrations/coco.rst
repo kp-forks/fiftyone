@@ -192,18 +192,14 @@ file containing COCO-formatted labels to work with:
 
     dataset = foz.load_zoo_dataset("quickstart")
 
-    # Classes list
-    classes = dataset.distinct("ground_truth.detections.label")
-
     # The directory in which the dataset's images are stored
     IMAGES_DIR = os.path.dirname(dataset.first().filepath)
 
     # Export some labels in COCO format
-    dataset.take(5).export(
+    dataset.take(5, seed=51).export(
         dataset_type=fo.types.COCODetectionDataset,
         label_field="ground_truth",
         labels_path="/tmp/coco.json",
-        classes=classes,
     )
 
 Now we have a ``/tmp/coco.json`` file on disk containing COCO labels
@@ -220,7 +216,7 @@ corresponding to the images in ``IMAGES_DIR``:
         "licenses": [],
         "categories": [
             {
-                "id": 0,
+                "id": 1,
                 "name": "airplane",
                 "supercategory": null
             },
@@ -229,9 +225,9 @@ corresponding to the images in ``IMAGES_DIR``:
         "images": [
             {
                 "id": 1,
-                "file_name": "001631.jpg",
-                "height": 612,
-                "width": 612,
+                "file_name": "003486.jpg",
+                "height": 427,
+                "width": 640,
                 "license": null,
                 "coco_url": null
             },
@@ -241,14 +237,14 @@ corresponding to the images in ``IMAGES_DIR``:
             {
                 "id": 1,
                 "image_id": 1,
-                "category_id": 9,
+                "category_id": 1,
                 "bbox": [
-                    92.14,
-                    220.04,
-                    519.86,
-                    61.89000000000001
+                    34.34,
+                    147.46,
+                    492.69,
+                    192.36
                 ],
-                "area": 32174.135400000006,
+                "area": 94773.8484,
                 "iscrowd": 0
             },
             ...
@@ -271,8 +267,9 @@ dataset:
         include_id=True,
     )
 
-    # Verify that the class list for our dataset was imported
-    print(coco_dataset.default_classes)  # ['airplane', 'apple', ...]
+    # COCO categories are also imported
+    print(coco_dataset.info["categories"])
+    # [{'id': 1, 'name': 'airplane', 'supercategory': None}, ...]
 
     print(coco_dataset)
 
@@ -284,12 +281,14 @@ dataset:
     Persistent:  False
     Tags:        []
     Sample fields:
-        id:         fiftyone.core.fields.ObjectIdField
-        filepath:   fiftyone.core.fields.StringField
-        tags:       fiftyone.core.fields.ListField(fiftyone.core.fields.StringField)
-        metadata:   fiftyone.core.fields.EmbeddedDocumentField(fiftyone.core.metadata.ImageMetadata)
-        detections: fiftyone.core.fields.EmbeddedDocumentField(fiftyone.core.labels.Detections)
-        coco_id:    fiftyone.core.fields.IntField
+        id:               fiftyone.core.fields.ObjectIdField
+        filepath:         fiftyone.core.fields.StringField
+        tags:             fiftyone.core.fields.ListField(fiftyone.core.fields.StringField)
+        metadata:         fiftyone.core.fields.EmbeddedDocumentField(fiftyone.core.metadata.ImageMetadata)
+        created_at:       fiftyone.core.fields.DateTimeField
+        last_modified_at: fiftyone.core.fields.DateTimeField
+        detections:       fiftyone.core.fields.EmbeddedDocumentField(fiftyone.core.labels.Detections)
+        coco_id:          fiftyone.core.fields.IntField
 
 In the above call to
 :meth:`Dataset.from_dir() <fiftyone.core.dataset.Dataset.from_dir>`, we provide
@@ -317,16 +316,16 @@ to add them to your dataset as follows:
     #
     # Mock COCO predictions, where:
     # - `image_id` corresponds to the `coco_id` field of `coco_dataset`
-    # - `category_id` corresponds to classes in `coco_dataset.default_classes`
+    # - `category_id` corresponds to `coco_dataset.info["categories"]`
     #
     predictions = [
-        {"image_id": 1, "category_id": 18, "bbox": [258, 41, 348, 243], "score": 0.87},
-        {"image_id": 2, "category_id": 11, "bbox": [61, 22, 504, 609], "score": 0.95},
+        {"image_id": 1, "category_id": 2, "bbox": [258, 41, 348, 243], "score": 0.87},
+        {"image_id": 2, "category_id": 4, "bbox": [61, 22, 504, 609], "score": 0.95},
     ]
+    categories = coco_dataset.info["categories"]
 
     # Add COCO predictions to `predictions` field of dataset
-    classes = coco_dataset.default_classes
-    fouc.add_coco_labels(coco_dataset, "predictions", predictions, classes)
+    fouc.add_coco_labels(coco_dataset, "predictions", predictions, categories)
 
     # Verify that predictions were added to two images
     print(coco_dataset.count("predictions"))  # 2
@@ -472,13 +471,14 @@ The example below demonstrates COCO-style detection evaluation on the
 mAP and PR curves
 ~~~~~~~~~~~~~~~~~
 
-You can compute mean average precision (mAP) and precision-recall (PR) curves
-for your predictions by passing the ``compute_mAP=True`` flag to
+You can compute mean average precision (mAP), mean average recall (mAR), and
+precision-recall (PR) curves for your predictions by passing the
+``compute_mAP=True`` flag to
 :meth:`evaluate_detections() <fiftyone.core.collections.SampleCollection.evaluate_detections>`:
 
 .. note::
 
-    All mAP calculations are performed according to the
+    All mAP and mAR calculations are performed according to the
     `COCO evaluation protocol <https://cocodataset.org/#detection-eval>`_.
 
 .. code-block:: python
@@ -490,7 +490,7 @@ for your predictions by passing the ``compute_mAP=True`` flag to
     dataset = foz.load_zoo_dataset("quickstart")
     print(dataset)
 
-    # Performs an IoU sweep so that mAP and PR curves can be computed
+    # Performs an IoU sweep so that mAP, mAR, and PR curves can be computed
     results = dataset.evaluate_detections(
         "predictions",
         gt_field="ground_truth",
@@ -500,6 +500,9 @@ for your predictions by passing the ``compute_mAP=True`` flag to
 
     print(results.mAP())
     # 0.3957
+
+    print(results.mAR())
+    # 0.5210
 
     plot = results.plot_pr_curves(classes=["person", "kite", "car"])
     plot.show()

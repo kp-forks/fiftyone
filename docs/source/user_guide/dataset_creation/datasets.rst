@@ -1499,9 +1499,8 @@ where `labels.json` is a JSON file in the following format:
             ...
         ],
         "categories": [
-            ...
             {
-                "id": 2,
+                "id": 1,
                 "name": "cat",
                 "supercategory": "animal",
                 "keypoints": ["nose", "head", ...],
@@ -1524,7 +1523,7 @@ where `labels.json` is a JSON file in the following format:
             {
                 "id": 1,
                 "image_id": 1,
-                "category_id": 2,
+                "category_id": 1,
                 "bbox": [260, 177, 231, 199],
                 "segmentation": [...],
                 "keypoints": [224, 226, 2, ...],
@@ -4507,8 +4506,8 @@ of images and their associated properties stored in
 
 .. note::
 
-    You must have `pydicom <https://github.com/pydicom/pydicom>`_ installed in
-    order to load DICOM datasets.
+    You must have `pydicom<3 <https://github.com/pydicom/pydicom>`_ installed
+    in order to load DICOM datasets.
 
 The standard format for datasets of this type is the following:
 

@@ -13,6 +13,29 @@ export class ModalSidebarPom {
     this.locator = page.getByTestId("modal").getByTestId("sidebar");
   }
 
+  async applyFilter(label: string) {
+    const selectionDiv = this.locator
+      .getByTestId("checkbox-" + label)
+      .getByTitle(label);
+    await selectionDiv.click({ force: true });
+  }
+
+  async applySearch(field: string, search: string) {
+    const input = this.locator.getByTestId(`selector-sidebar-search-${field}`);
+    await input.fill(search);
+    await input.press("Enter");
+  }
+
+  async clearGroupFilters(name: string) {
+    return this.locator.getByTestId(`clear-filters-${name}`).click();
+  }
+
+  async clickFieldDropdown(field: string) {
+    return this.locator
+      .getByTestId(`sidebar-field-arrow-enabled-${field}`)
+      .click();
+  }
+
   getSidebarEntry(key: string) {
     return this.locator.getByTestId(`sidebar-entry-${key}`);
   }
@@ -48,6 +71,10 @@ export class ModalSidebarPom {
     return absPath;
   }
 
+  async toggleLabelCheckbox(field: string) {
+    await this.locator.getByTestId(`checkbox-${field}`).click();
+  }
+
   async toggleSidebarGroup(name: string) {
     await this.locator.getByTestId(`sidebar-group-entry-${name}`).click();
   }
@@ -59,6 +86,29 @@ class SidebarAsserter {
   async verifySidebarEntryText(key: string, value: string) {
     const text = await this.modalSidebarPom.getSidebarEntryText(key);
     expect(text).toBe(value);
+  }
+
+  async waitUntilSidebarEntryTextEquals(key: string, value: string) {
+    return this.modalSidebarPom.page.waitForFunction(
+      ({ key_, value_ }: { key_: string; value_: string }) => {
+        return (
+          document.querySelector(`[data-cy='sidebar-entry-${key_}']`)
+            .textContent === value_
+        );
+      },
+      { key_: key, value_: value },
+      { timeout: 5000 }
+    );
+  }
+
+  async waitUntilSidebarEntryTextEqualsMultiple(entries: {
+    [key: string]: string;
+  }) {
+    await Promise.all(
+      Object.entries(entries).map(([key, value]) =>
+        this.waitUntilSidebarEntryTextEquals(key, value)
+      )
+    );
   }
 
   async verifySidebarEntryTexts(entries: { [key: string]: string }) {
@@ -84,6 +134,18 @@ class SidebarAsserter {
         timeout: Duration.Seconds(1),
       }
     );
+  }
+
+  async verifyObject(key: string, obj: { [key: string]: string }) {
+    const locator = this.modalSidebarPom.getSidebarEntry(key);
+
+    for (const k in obj) {
+      const v = obj[k];
+      const entry = locator.getByTestId(`key-value-${k}-${v}`);
+
+      await expect(entry.getByTestId(`key-${k}`)).toHaveText(k);
+      await expect(entry.getByTestId(`value-${v}`)).toHaveText(v);
+    }
   }
 
   async verifyLabelTagCount(count: number) {

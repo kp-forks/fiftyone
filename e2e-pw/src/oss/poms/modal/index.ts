@@ -1,8 +1,12 @@
-import { expect, Locator, Page } from "src/oss/fixtures";
+import { Locator, Page, expect } from "src/oss/fixtures";
 import { EventUtils } from "src/shared/event-utils";
 import { Duration } from "../../utils";
 import { ModalTaggerPom } from "../action-row/tagger/modal-tagger";
+import { ModalPanelPom } from "../panels/modal-panel";
+import { UrlPom } from "../url";
 import { ModalGroupActionsPom } from "./group-actions";
+import { ModalImaAsVideoControlsPom } from "./imavid-controls";
+import { Looker3DControlsPom } from "./looker-3d-controls";
 import { ModalSidebarPom } from "./modal-sidebar";
 import { ModalVideoControlsPom } from "./video-controls";
 
@@ -10,13 +14,17 @@ export class ModalPom {
   readonly groupCarousel: Locator;
   readonly looker: Locator;
   readonly modalContainer: Locator;
-
   readonly assert: ModalAsserter;
+
+  readonly panel: ModalPanelPom;
+  readonly group: ModalGroupActionsPom;
+  readonly locator: Locator;
   readonly sidebar: ModalSidebarPom;
   readonly tagger: ModalTaggerPom;
-  readonly locator: Locator;
-  readonly group: ModalGroupActionsPom;
+  readonly url: UrlPom;
+  readonly imavid: ModalImaAsVideoControlsPom;
   readonly video: ModalVideoControlsPom;
+  readonly looker3dControls: Looker3DControlsPom;
 
   constructor(
     private readonly page: Page,
@@ -29,10 +37,20 @@ export class ModalPom {
     this.looker = this.locator.getByTestId("looker").last();
     this.modalContainer = this.locator.getByTestId("modal-looker-container");
 
-    this.sidebar = new ModalSidebarPom(page);
-    this.tagger = new ModalTaggerPom(page, this);
     this.group = new ModalGroupActionsPom(page, this);
+    this.panel = new ModalPanelPom(page, this);
+    this.tagger = new ModalTaggerPom(page, this);
+    this.sidebar = new ModalSidebarPom(page);
+    this.url = new UrlPom(page, eventUtils);
+    this.imavid = new ModalImaAsVideoControlsPom(page, this);
     this.video = new ModalVideoControlsPom(page, this);
+    this.looker3dControls = new Looker3DControlsPom(page, this);
+  }
+
+  get modalSamplePluginTitle() {
+    return this.locator
+      .getByTestId("panel-tab-fo-sample-modal-plugin")
+      .textContent();
   }
 
   get groupLooker() {
@@ -45,6 +63,7 @@ export class ModalPom {
     return this.locator.getByTestId("looker3d");
   }
 
+  // todo: remove this in favor of looker3dControls
   get looker3dActionBar() {
     return this.locator.getByTestId("looker3d-action-bar");
   }
@@ -70,9 +89,27 @@ export class ModalPom {
     );
   }
 
-  async toggleSelection(pcd = false) {
-    pcd ? await this.looker3d.hover() : await this.looker.hover();
-    await this.locator.getByTestId("selectable-bar").click();
+  async hideControls() {
+    let isControlsOpacityZero = false;
+    const controls = this.locator.getByTestId("looker-controls");
+
+    do {
+      await controls.press("c");
+      const opacity = await controls.evaluate(
+        (e) => getComputedStyle(e).opacity
+      );
+      isControlsOpacityZero = parseFloat(opacity) === 0;
+    } while (!isControlsOpacityZero);
+  }
+
+  async toggleSelection(isPcd = false) {
+    if (isPcd) {
+      await this.looker3d.hover();
+    } else {
+      await this.looker.hover();
+    }
+
+    await this.locator.getByTestId("select-sample-checkbox").click();
   }
 
   async navigateSample(
@@ -80,6 +117,7 @@ export class ModalPom {
     allowErrorInfo = false
   ) {
     const currentSampleId = await this.sidebar.getSampleId();
+
     await this.locator
       .getByTestId(`nav-${direction === "forward" ? "right" : "left"}-button`)
       .click();
@@ -103,6 +141,7 @@ export class ModalPom {
 
   async navigateCarousel(index: number, allowErrorInfo = false) {
     const looker = this.groupCarousel.getByTestId("looker").nth(index);
+
     await looker.click({ position: { x: 10, y: 60 } });
 
     return this.waitForSampleLoadDomAttribute(allowErrorInfo);
@@ -160,6 +199,7 @@ export class ModalPom {
     const currentSlice = await this.sidebar.getSidebarEntryText(groupField);
     const lookers = this.groupCarousel.getByTestId("looker");
     const looker = lookers.filter({ hasText: slice }).first();
+
     await looker.click({ position: { x: 10, y: 60 } });
 
     // wait for slice to change
@@ -175,10 +215,17 @@ export class ModalPom {
     return this.waitForSampleLoadDomAttribute(allowErrorInfo);
   }
 
-  async close() {
+  async close({ ignoreError } = { ignoreError: false }) {
     // close by clicking outside of modal
-    await this.page.click("body", { position: { x: 0, y: 0 } });
-    await this.locator.waitFor({ state: "detached" });
+    try {
+      await this.page.click("body", { position: { x: 0, y: 0 } });
+      await this.locator.waitFor({ state: "hidden" });
+    } catch (e) {
+      if (ignoreError) {
+        return;
+      }
+      throw e;
+    }
   }
 
   async navigateNextSample(allowErrorInfo = false) {
@@ -235,6 +282,14 @@ export class ModalPom {
 class ModalAsserter {
   constructor(private readonly modalPom: ModalPom) {}
 
+  async isClosed() {
+    await expect(this.modalPom.modalContainer).toBeHidden();
+  }
+
+  async isOpen() {
+    await expect(this.modalPom.modalContainer).toBeVisible();
+  }
+
   async verifyModalOpenedSuccessfully() {
     await this.modalPom.waitForSampleLoadDomAttribute();
     await expect(this.modalPom.locator).toBeVisible();
@@ -243,9 +298,7 @@ class ModalAsserter {
   async verifySelectionCount(n: number) {
     const action = this.modalPom.locator.getByTestId("action-manage-selected");
 
-    const count = await action.first().textContent();
-
-    expect(count).toBe(String(n));
+    await expect(action.first()).toHaveText(String(n));
   }
 
   async verifyCarouselLength(expectedCount: number) {
@@ -258,5 +311,14 @@ class ModalAsserter {
   async verifySampleNavigation(direction: "forward" | "backward") {
     const navigation = this.modalPom.getSampleNavigation(direction);
     await expect(navigation).toBeVisible();
+  }
+
+  async verifyModalSamplePluginTitle(
+    title: string,
+    { pinned }: { pinned: boolean } = { pinned: false }
+  ) {
+    const actualTitle = await this.modalPom.modalSamplePluginTitle;
+    const expectedTitle = pinned ? `📌 ${title}` : title;
+    expect(actualTitle).toBe(expectedTitle);
   }
 }

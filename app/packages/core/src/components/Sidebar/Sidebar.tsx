@@ -1,15 +1,25 @@
-import { useTheme, Resizable } from "@fiftyone/components";
+import { Resizable } from "@fiftyone/components";
 import * as fos from "@fiftyone/state";
 import { replace, useEventHandler } from "@fiftyone/state";
-import { move, scrollbarStyles } from "@fiftyone/utilities";
-import { Box } from "@mui/material";
+import { move, styles } from "@fiftyone/utilities";
+import { useTheme as useMUITheme } from "@mui/material";
 import { Controller, animated, config } from "@react-spring/web";
 import { default as React, useCallback, useRef, useState } from "react";
 import { useRecoilState, useRecoilValue, useResetRecoilState } from "recoil";
 import styled from "styled-components";
 import SchemaSettings from "../Schema/SchemaSettings";
 import { Filter } from "./Entries";
+import style from "./Sidebar.module.css";
 import ViewSelection from "./ViewSelection";
+
+const TopContainer = styled.div`
+  padding: 1rem 1rem 0.5rem 1rem;
+  background: ${({ theme }) => theme.background.mediaSpace};
+  display: flex;
+  flex-direction: column;
+  row-gap: 0.5rem;
+  border-radius: 0 6px 0 0;
+`;
 
 const MARGIN = 3;
 
@@ -372,16 +382,15 @@ const SidebarColumn = styled.div`
   overflow-y: scroll;
   overflow-x: hidden;
 
-  scrollbar-color: ${({ theme }) => theme.text.tertiary}
-    ${({ theme }) => theme.background.body};
   background: ${({ theme }) => theme.background.sidebar};
-  ${scrollbarStyles}
+
+  ${styles.scrollbarStyles}
 `;
 
 const Container = animated(styled.div`
   position: relative;
   min-height: 100%;
-  margin: 0 1rem;
+  scrollbar-width: none;
 
   & > div {
     position: absolute;
@@ -424,7 +433,7 @@ const InteractiveSidebar = ({
   const resetWidth = useResetRecoilState(fos.sidebarWidth(modal));
   const shown = useRecoilValue(fos.sidebarVisible(modal));
   const [entries, setEntries] = fos.useEntries(modal);
-  const disabled = useRecoilValue(fos.disabledPaths);
+  const disabled = useRecoilValue(fos.disabledFilterPaths);
   const cb = useRef<() => void>();
   const [containerController] = useState(
     () => new Controller({ minHeight: 0 })
@@ -692,7 +701,7 @@ const InteractiveSidebar = ({
   const [observer] = useState<ResizeObserver>(
     () => new ResizeObserver(placeItems)
   );
-  const theme = useTheme();
+  const muiTheme = useMUITheme();
 
   return shown ? (
     <Resizable
@@ -705,23 +714,18 @@ const InteractiveSidebar = ({
         setWidth(width + delta);
       }}
       onResizeReset={resetWidth}
-      style={{ borderTopRightRadius: 8 }}
+      style={{
+        borderTopRightRadius: 8,
+        zIndex: modal ? muiTheme.zIndex.tooltip + 1 : undefined,
+      }}
     >
       <SchemaSettings />
       {!modal && (
-        <Box
-          style={{
-            padding: 8,
-            paddingLeft: 16,
-            paddingRight: 16,
-            background: theme.background.mediaSpace,
-            borderTopRightRadius: 8,
-          }}
-        >
+        <TopContainer>
           <ViewSelection id="saved-views" />
-        </Box>
+          <Filter />
+        </TopContainer>
       )}
-      <Filter modal={modal} />
       <SidebarColumn
         ref={container}
         data-cy="sidebar-column"
@@ -733,8 +737,12 @@ const InteractiveSidebar = ({
           scroll.current = target.scrollTop;
           down.current && animate(last.current);
         }}
+        style={modal ? { maxHeight: "calc(100% - 28px)" } : {}}
       >
-        <Container style={containerController.springs}>
+        <Container
+          className={style.sidebar}
+          style={containerController.springs}
+        >
           {order.current.map((key) => {
             const entry = items.current[key].entry;
             if (entry.kind === fos.EntryKind.GROUP) {

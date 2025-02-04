@@ -1,7 +1,7 @@
 """
 FiftyOne Server mutations.
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
@@ -90,14 +90,17 @@ class Mutation(SetColorScheme):
     ) -> bool:
         state = get_state()
         state.dataset = fod.load_dataset(name) if name is not None else None
-        state.selected = []
-        state.selected_labels = []
-        state.view = None
-        state.view_name = view_name if view_name is not None else None
-        state.spaces = foo.default_workspace_factory()
+
         state.color_scheme = build_color_scheme(
             None, state.dataset, state.config
         )
+        state.group_id = None
+        state.sample_id = None
+        state.selected = []
+        state.selected_labels = []
+        state.spaces = foo.default_workspace_factory()
+        state.view = None
+
         if state.dataset is not None:
             state.group_slice = state.dataset.group_slice
 
@@ -109,9 +112,23 @@ class Mutation(SetColorScheme):
         self,
         subscription: str,
         session: t.Optional[str],
-        slice: str,
+        slice: t.Optional[str],
     ) -> bool:
         await dispatch_event(subscription, fose.SetGroupSlice(slice=slice))
+        return True
+
+    @gql.mutation
+    async def set_sample(
+        self,
+        subscription: str,
+        session: t.Optional[str],
+        group_id: t.Optional[str],
+        id: t.Optional[str],
+    ) -> bool:
+        await dispatch_event(
+            subscription,
+            fose.SetSample(group_id=group_id, sample_id=id),
+        )
         return True
 
     @gql.mutation
@@ -187,14 +204,18 @@ class Mutation(SetColorScheme):
         form: t.Optional[StateForm] = None,
     ) -> t.Union[BSONArray, None]:
         state = get_state()
+        state.group_id = None
+        state.sample_id = None
         state.selected = []
         state.selected_labels = []
+
         if not dataset_name:
             state.dataset = None
-            state.view = None
-            state.spaces = foo.default_workspace_factory()
             state.group_slice = None
+            state.spaces = foo.default_workspace_factory()
+            state.view = None
             await dispatch_event(subscription, fose.StateUpdate(state=state))
+            return None
 
         result_view = None
         ds = fod.load_dataset(dataset_name)
@@ -243,14 +264,7 @@ class Mutation(SetColorScheme):
             result_view = _build_result_view(result_view, form)
 
         # Set view state
-        slug = (
-            fou.to_slug(result_view.name)
-            if result_view.name
-            else saved_view_slug
-        )
         state.view = result_view
-        state.view_name = result_view.name
-        state.saved_view_slug = slug
 
         await dispatch_event(
             subscription,
@@ -300,7 +314,6 @@ class Mutation(SetColorScheme):
         if use_state:
             dataset.reload()
             state.view = dataset.load_saved_view(view_name)
-            state.view_name = view_name
             await dispatch_event(subscription, fose.StateUpdate(state=state))
 
         return next(
@@ -348,7 +361,6 @@ class Mutation(SetColorScheme):
             and state.view.name == view_name
         ):
             state.view = dataset.view()
-            state.view_name = None
 
         await dispatch_event(subscription, fose.StateUpdate(state=state))
 

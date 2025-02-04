@@ -1,10 +1,11 @@
 """
 FiftyOne delegated operations.
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
+
 import asyncio
 import logging
 import traceback
@@ -16,6 +17,7 @@ from fiftyone.operators.executor import (
     do_execute_operator,
     ExecutionResult,
     ExecutionRunState,
+    resolve_type_with_context,
 )
 
 
@@ -32,7 +34,12 @@ class DelegatedOperationService(object):
         self._repo = repo
 
     def queue_operation(
-        self, operator, label=None, delegation_target=None, context=None
+        self,
+        operator,
+        label=None,
+        delegation_target=None,
+        context=None,
+        metadata=None,
     ):
         """Queues the given delegated operation for execution.
 
@@ -43,6 +50,9 @@ class DelegatedOperationService(object):
                 the operator if not supplied)
             context (None): an
                 :class:`fiftyone.operators.executor.ExecutionContext`
+            metadata (None): an optional metadata dict containing properties below:
+                - inputs_schema: the schema of the operator's inputs
+                - outputs_schema: the schema of the operator's outputs
 
         Returns:
             a :class:`fiftyone.factory.repos.DelegatedOperationDocument`
@@ -52,6 +62,7 @@ class DelegatedOperationService(object):
             label=label if label else operator,
             delegation_target=delegation_target,
             context=context,
+            metadata=metadata,
         )
 
     def set_progress(self, doc_id, progress):
@@ -68,7 +79,14 @@ class DelegatedOperationService(object):
         """
         return self._repo.update_progress(_id=doc_id, progress=progress)
 
-    def set_running(self, doc_id, progress=None, run_link=None):
+    def set_running(
+        self,
+        doc_id,
+        progress=None,
+        run_link=None,
+        log_path=None,
+        required_state=None,
+    ):
         """Sets the given delegated operation to running state.
 
         Args:
@@ -78,15 +96,62 @@ class DelegatedOperationService(object):
                 operation
             run_link (None): an optional link to orchestrator-specific
                 information about the operation
+            log_path (None): an optional path to the log file for the operation
+            required_state (None): an optional
+                :class:`fiftyone.operators.executor.ExecutionRunState` required
+                state of the operation. If provided, the update will only be
+                performed if the referenced operation matches this state.
 
         Returns:
-            a :class:`fiftyone.factory.repos.DelegatedOperationDocument`
+            a :class:`fiftyone.factory.repos.DelegatedOperationDocument` if the
+                update was performed, else ``None``.
         """
         return self._repo.update_run_state(
             _id=doc_id,
             run_state=ExecutionRunState.RUNNING,
             run_link=run_link,
+            log_path=log_path,
             progress=progress,
+            required_state=required_state,
+        )
+
+    def set_scheduled(self, doc_id, required_state=None):
+        """Sets the given delegated operation to scheduled state.
+        Args:
+            doc_id: the ID of the delegated operation
+            required_state (None): an optional
+                :class:`fiftyone.operators.executor.ExecutionRunState` required
+                state of the operation. If provided, the update will only be
+                performed if the referenced operation matches this state.
+
+        Returns:
+            a :class:`fiftyone.factory.repos.DelegatedOperationDocument` if the
+                update was performed, else ``None``.
+        """
+        return self._repo.update_run_state(
+            _id=doc_id,
+            run_state=ExecutionRunState.SCHEDULED,
+            required_state=required_state,
+        )
+
+    def set_queued(self, doc_id, required_state=None):
+        """Sets the given delegated operation to queued state.
+
+        Args:
+            doc_id: the ID of the delegated operation
+            required_state (None): an optional
+                :class:`fiftyone.operators.executor.ExecutionRunState` required
+                state of the operation. If provided, the update will only be
+                performed if the referenced operation matches this state.
+
+        Returns:
+            a :class:`fiftyone.factory.repos.DelegatedOperationDocument` if the
+                update was performed, else ``None``.
+        """
+        return self._repo.update_run_state(
+            _id=doc_id,
+            run_state=ExecutionRunState.QUEUED,
+            required_state=required_state,
         )
 
     def set_completed(
@@ -95,6 +160,8 @@ class DelegatedOperationService(object):
         result=None,
         progress=None,
         run_link=None,
+        log_path=None,
+        required_state=None,
     ):
         """Sets the given delegated operation to completed state.
 
@@ -108,16 +175,25 @@ class DelegatedOperationService(object):
                 operation
             run_link (None): an optional link to orchestrator-specific
                 information about the operation
+            log_path (None): an optional path to the log file for the operation
+            required_state (None): an optional
+                :class:`fiftyone.operators.executor.ExecutionRunState` required
+                state of the operation. If provided, the update will only be
+                performed if the referenced operation matches this state.
 
         Returns:
-            a :class:`fiftyone.factory.repos.DelegatedOperationDocument`
+            a :class:`fiftyone.factory.repos.DelegatedOperationDocument` if the
+                update was performed, else ``None``.
         """
+
         return self._repo.update_run_state(
             _id=doc_id,
             run_state=ExecutionRunState.COMPLETED,
             result=result,
             progress=progress,
             run_link=run_link,
+            log_path=log_path,
+            required_state=required_state,
         )
 
     def set_failed(
@@ -126,6 +202,8 @@ class DelegatedOperationService(object):
         result=None,
         progress=None,
         run_link=None,
+        log_path=None,
+        required_state=None,
     ):
         """Sets the given delegated operation to failed state.
 
@@ -139,16 +217,24 @@ class DelegatedOperationService(object):
                 operation
             run_link (None): an optional link to orchestrator-specific
                 information about the operation
+            log_path (None): an optional path to the log file for the operation
+            required_state (None): an optional
+                :class:`fiftyone.operators.executor.ExecutionRunState` required
+                state of the operation. If provided, the update will only be
+                performed if the referenced operation matches this state.
 
         Returns:
-            a :class:`fiftyone.factory.repos.DelegatedOperationDocument`
+            a :class:`fiftyone.factory.repos.DelegatedOperationDocument` if the
+                update was performed, else ``None``.
         """
         return self._repo.update_run_state(
             _id=doc_id,
             run_state=ExecutionRunState.FAILED,
             result=result,
             run_link=run_link,
+            log_path=log_path,
             progress=progress,
+            required_state=required_state,
         )
 
     def set_pinned(self, doc_id, pinned=True):
@@ -174,6 +260,21 @@ class DelegatedOperationService(object):
             a :class:`fiftyone.factory.repos.DelegatedOperationDocument`
         """
         return self._repo.set_label(_id=doc_id, label=label)
+
+    def set_log_upload_error(self, doc_id, log_upload_error):
+        """Sets the log upload error for the given delegated operation.
+
+        Args:
+            doc_id: the ID of the delegated operation
+            log upload error: the error message if we failed to upload
+            logs for the given delegated operation.
+
+        Returns:
+            a :class:`fiftyone.factory.repos.DelegatedOperationDocument`
+        """
+        return self._repo.set_log_upload_error(
+            _id=doc_id, log_upload_error=log_upload_error
+        )
 
     def delete_operation(self, doc_id):
         """Deletes the given delegated operation.
@@ -219,6 +320,34 @@ class DelegatedOperationService(object):
             a list of :class:`fiftyone.factory.repos.DelegatedOperationDocument`
         """
         return self._repo.get_queued_operations(
+            operator=operator, dataset_name=dataset_name
+        )
+
+    def get_scheduled_operations(self, operator=None, dataset_name=None):
+        """Returns all scheduled delegated operations.
+        Args:
+            operator (None): the optional name of the operator to return all
+                the scheduled delegated operations for
+            dataset_name (None): the optional name of the dataset to return all
+                the scheduled delegated operations for
+        Returns:
+            a list of :class:`fiftyone.factory.repos.DelegatedOperationDocument`
+        """
+        return self._repo.get_scheduled_operations(
+            operator=operator, dataset_name=dataset_name
+        )
+
+    def get_running_operations(self, operator=None, dataset_name=None):
+        """Returns all running delegated operations.
+        Args:
+            operator (None): the optional name of the operator to return all
+                the running delegated operations for
+            dataset_name (None): the optional name of the dataset to return all
+                the running delegated operations for
+        Returns:
+            a list of :class:`fiftyone.factory.repos.DelegatedOperationDocument`
+        """
+        return self._repo.get_running_operations(
             operator=operator, dataset_name=dataset_name
         )
 
@@ -298,6 +427,7 @@ class DelegatedOperationService(object):
             log (False): the optional boolean flag to log the execution of the
                 delegated operations
         """
+        results = []
         if limit is not None:
             paging = DelegatedOperationPagingParams(limit=limit)
         else:
@@ -313,7 +443,8 @@ class DelegatedOperationService(object):
         )
 
         for op in queued_ops:
-            self.execute_operation(operation=op, log=log)
+            results.append(self.execute_operation(operation=op, log=log))
+        return results
 
     def count(self, filters=None, search=None):
         """Counts the delegated operations matching the given criteria.
@@ -327,7 +458,9 @@ class DelegatedOperationService(object):
         """
         return self._repo.count(filters=filters, search=search)
 
-    def execute_operation(self, operation, log=False, run_link=None):
+    def execute_operation(
+        self, operation, log=False, run_link=None, log_path=None
+    ):
         """Executes the given delegated operation.
 
         Args:
@@ -337,9 +470,29 @@ class DelegatedOperationService(object):
                 delegated operations
             run_link (None): an optional link to orchestrator-specific
                 information about the operation
+            log_path (None): an optional path to the log file for the operation
         """
+        result = None
         try:
-            self.set_running(doc_id=operation.id, run_link=run_link)
+            succeeded = (
+                self.set_running(
+                    doc_id=operation.id,
+                    run_link=run_link,
+                    log_path=log_path,
+                    required_state=ExecutionRunState.QUEUED,
+                )
+                is not None
+            )
+            if not succeeded:
+                if log:
+                    logger.debug(
+                        "Not executing operation %s (%s) which is "
+                        "no longer in QUEUED state, or doesn't exist.",
+                        operation.id,
+                        operation.operator,
+                    )
+                return result
+
             if log:
                 logger.info(
                     "\nRunning operation %s (%s)",
@@ -360,6 +513,7 @@ class DelegatedOperationService(object):
                 logger.info(
                     "Operation %s failed\n%s", operation.id, result.error
                 )
+        return result
 
     async def _execute_operator(self, doc):
         operator_uri = doc.operator
@@ -382,5 +536,27 @@ class DelegatedOperationService(object):
         if isinstance(prepared, ExecutionResult):
             raise prepared.to_exception()
 
-        operator, _, ctx = prepared
-        return await do_execute_operator(operator, ctx, exhaust=True)
+        operator, _, ctx, __ = prepared
+
+        result = await do_execute_operator(operator, ctx, exhaust=True)
+
+        outputs_schema = None
+        try:
+            # Resolve output types now
+            ctx.request_params["target"] = "outputs"
+            ctx.request_params["results"] = result
+
+            outputs = await resolve_type_with_context(operator, ctx)
+            if outputs is not None:
+                outputs_schema = outputs.to_json()
+        except (AttributeError, Exception):
+            logger.warning(
+                "Failed to resolve output schema for the operation."
+                + traceback.format_exc(),
+            )
+
+        execution_result = ExecutionResult(
+            result=result, outputs_schema=outputs_schema
+        )
+
+        return execution_result

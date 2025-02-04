@@ -1,10 +1,11 @@
 """
 Session server-sent events client.
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
+
 from collections import defaultdict
 from dataclasses import asdict, dataclass
 import logging
@@ -41,7 +42,6 @@ def _ping(url: str) -> None:
 class Client:
     address: str
     auto: bool
-    desktop: bool
     port: int
     remote: bool
     start_time: float
@@ -95,6 +95,7 @@ class Client:
                                     "set_color_scheme",
                                     "set_dataset_color_scheme",
                                     "set_group_slice",
+                                    "set_sample",
                                     "set_spaces",
                                     "state_update",
                                 ],

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("recoil");
 vi.mock("recoil-relay");
 
-import { setMockAtoms, TestSelectorFamily } from "../../../../__mocks__/recoil";
+import { TestSelectorFamily, setMockAtoms } from "../../../../__mocks__/recoil";
 import * as filters from "./filters";
 
 describe("filter resolves correctly", () => {
@@ -16,7 +16,7 @@ describe("filter resolves correctly", () => {
 
   setMockAtoms({
     filters: { test: "grid filters" },
-    modalFilters: { test: "modal filters" },
+    __modalFilters_selector: { test: "modal filters" },
   });
 
   it("resolves filter correctly in grid view", () => {
@@ -35,37 +35,19 @@ describe("hasFilter resolves correctly", () => {
   it("hasFilter resolves correctly when there is filter", () => {
     setMockAtoms({
       filters: { test: "grid filters" },
-      modalFilters: { test: "modal filters" },
+      __modalFilters_selector: { test: "modal filters" },
     });
     expect(test()).toBe(true);
   });
 
   it("hasFilter resolves correctly when there is hidden label ids, modal is open", () => {
     setMockAtoms({
-      modalFilters: { test: "modal filters" },
       hiddenLabelIds: ["1", "2"],
+      __modalFilters_selector: { test: "modal filters" },
     });
     const test2 = <TestSelectorFamily<typeof filters.hasFilters>>(
       (<unknown>filters.hasFilters(true))
     );
     expect(test2()).toBe(true);
-  });
-});
-
-describe("setting a filter does not use async state", () => {
-  const test = <TestSelectorFamily<typeof filters.filter>>(
-    (<unknown>filters.filter({ modal: false, path: "my_field" }))
-  );
-
-  it("does not use lightningUnlocked ", () => {
-    setMockAtoms({
-      granularSidebarExpandedStore: {},
-      lightning: true,
-      lightningPaths: () => new Set(["my_field"]),
-      lightningUnlocked: () => {
-        throw new Error("do not call me");
-      },
-    });
-    test.set({ exclude: false, isMatching: false, values: ["value"] });
   });
 });

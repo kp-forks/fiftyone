@@ -1,7 +1,7 @@
 """
 FiftyOne's public interface.
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
@@ -21,6 +21,8 @@ from .core.aggregations import (
     Distinct,
     FacetAggregations,
     HistogramValues,
+    Min,
+    Max,
     Mean,
     Quantiles,
     Schema,
@@ -33,6 +35,7 @@ from .core.collections import SaveContext
 from .core.config import AppConfig
 from .core.dataset import (
     Dataset,
+    DatasetNotFoundError,
     list_datasets,
     dataset_exists,
     load_dataset,
@@ -112,6 +115,7 @@ from .core.metadata import (
     Metadata,
     ImageMetadata,
     VideoMetadata,
+    SceneMetadata,
 )
 from .core.models import (
     apply_model,
@@ -120,7 +124,10 @@ from .core.models import (
     load_model,
     Model,
     ModelConfig,
+    LogitsMixin,
     EmbeddingsMixin,
+    PromptMixin,
+    SamplesMixin,
     TorchModelMixin,
     ModelManagerConfig,
     ModelManager,
@@ -208,7 +215,6 @@ from .core.stages import (
     MatchLabels,
     MatchTags,
     Mongo,
-    Shuffle,
     Select,
     SelectBy,
     SelectFields,
@@ -217,6 +223,7 @@ from .core.stages import (
     SelectGroupSlices,
     SelectLabels,
     SetField,
+    Shuffle,
     Skip,
     SortBy,
     SortBySimilarity,

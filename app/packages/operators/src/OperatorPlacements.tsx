@@ -1,5 +1,11 @@
-import { ErrorBoundary, Link, PillButton } from "@fiftyone/components";
+import {
+  AdaptiveMenuItemComponentPropsType,
+  ErrorBoundary,
+  Link,
+  PillButton,
+} from "@fiftyone/components";
 import { withSuspense } from "@fiftyone/state";
+import { isPrimitiveString } from "@fiftyone/utilities";
 import { Extension } from "@mui/icons-material";
 import styled from "styled-components";
 import { types } from ".";
@@ -11,17 +17,57 @@ import {
   usePromptOperatorInput,
 } from "./state";
 import { Placement, Places } from "./types";
-import { isPrimitiveString } from "@fiftyone/utilities";
+
+import { getStringAndNumberProps } from "@fiftyone/core/src/components/Actions/utils";
+
+export function OperatorPlacementWithErrorBoundary(
+  props: OperatorPlacementProps
+) {
+  return (
+    <ErrorBoundary
+      Fallback={(errorProps) => {
+        return <PlacementError {...props} {...errorProps} />;
+      }}
+    >
+      <OperatorPlacement {...props} />
+    </ErrorBoundary>
+  );
+}
 
 function OperatorPlacements(props: OperatorPlacementsProps) {
-  const { place } = props;
+  const { place, modal } = props;
   const { placements } = useOperatorPlacements(place);
 
   return placements.map((placement) => (
-    <ErrorBoundary key={placement?.operator?.uri} Fallback={() => null}>
-      <OperatorPlacement {...placement} place={place} />
-    </ErrorBoundary>
+    <OperatorPlacementWithErrorBoundary
+      key={placement?.operator?.uri}
+      modal={modal}
+      place={place}
+      {...placement}
+    />
   ));
+}
+
+function PlacementError(props) {
+  const { adaptiveMenuItemProps, error, operator } = props;
+  console.error(error);
+  const operatorURI = operator?.uri;
+  const postfix = operatorURI ? ` for ${operatorURI}` : "";
+  return (
+    <PillButton
+      {...(getStringAndNumberProps(adaptiveMenuItemProps) || {})}
+      icon={
+        <OperatorIcon
+          icon="error"
+          iconProps={{ sx: { color: (theme) => theme.palette.error.main } }}
+        />
+      }
+      title={error?.message || `Failed to load placement${postfix}`}
+      onClick={() => {
+        // do nothing
+      }}
+    />
+  );
 }
 
 export default withSuspense(OperatorPlacements, () => null);
@@ -44,7 +90,7 @@ function OperatorPlacement(props: OperatorPlacementProps) {
 
 function ButtonPlacement(props: OperatorPlacementProps) {
   const promptForInput = usePromptOperatorInput();
-  const { operator, placement, place } = props;
+  const { operator, placement, place, adaptiveMenuItemProps, modal } = props;
   const { uri, label: operatorLabel, name: operatorName } = operator;
   const { view = {} } = placement;
   const { label } = view;
@@ -84,18 +130,24 @@ function ButtonPlacement(props: OperatorPlacementProps) {
   ) {
     return (
       <PillButton
+        {...(getStringAndNumberProps(adaptiveMenuItemProps) || {})}
         onClick={handleClick}
         icon={showIcon && IconComponent}
         text={!showIcon && title}
         title={title}
         highlight={place === types.Places.SAMPLES_GRID_ACTIONS}
         style={{ whiteSpace: "nowrap" }}
+        tooltipPlacement={modal ? "top" : "bottom"}
       />
     );
   }
 
   return (
-    <SquareButton to={handleClick} title={label}>
+    <SquareButton
+      {...(getStringAndNumberProps(adaptiveMenuItemProps) || {})}
+      to={handleClick}
+      title={label}
+    >
       {IconComponent}
     </SquareButton>
   );
@@ -103,12 +155,15 @@ function ButtonPlacement(props: OperatorPlacementProps) {
 
 type OperatorPlacementsProps = {
   place: Places;
+  modal?: boolean;
 };
 
 type OperatorPlacementProps = {
+  modal?: boolean;
   placement: Placement;
   place: Places;
   operator: Operator;
+  adaptiveMenuItemProps?: AdaptiveMenuItemComponentPropsType;
 };
 
 // todo: consolidate and move to component

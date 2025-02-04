@@ -1,29 +1,29 @@
 import { Tooltip } from "@fiftyone/components";
-import useLightningUnlocked from "@fiftyone/state/src/hooks/useLightningUnlocked";
 import KeyboardArrowDown from "@mui/icons-material/KeyboardArrowDown";
 import KeyboardArrowUp from "@mui/icons-material/KeyboardArrowUp";
 import React from "react";
-import { RecoilState, useRecoilState } from "recoil";
+import type { RecoilState } from "recoil";
+import { useRecoilState } from "recoil";
 import { useTheme } from "styled-components";
-import AddIndex from "./AddIndex";
+import { FRAME_FILTERING_DISABLED } from "../../../../utils/links";
+import DisabledReason from "./DisabledReason";
 
 export default ({
   id,
-  color,
   disabled,
   expanded,
-  unindexed,
+  frameFilterDisabledPath,
 }: {
   id: string;
   color?: string;
   disabled?: boolean;
   expanded: RecoilState<boolean>;
+  frameFilterDisabledPath?: boolean;
   unindexed?: boolean;
 }) => {
   const [isExpanded, setExpanded] = useRecoilState(expanded);
   const Arrow = isExpanded ? KeyboardArrowUp : KeyboardArrowDown;
   const theme = useTheme();
-  const unlocked = useLightningUnlocked();
   const arrow = (
     <Arrow
       data-cy={`sidebar-field-arrow-disabled-${id}`}
@@ -31,16 +31,24 @@ export default ({
     />
   );
 
-  if (disabled) {
-    return arrow;
-  }
-
-  if (unindexed && !unlocked) {
+  if (frameFilterDisabledPath) {
     return (
-      <Tooltip text={<AddIndex />} placement="top-center">
+      <Tooltip
+        text={
+          <DisabledReason
+            text={"frame filtering is disabled"}
+            href={FRAME_FILTERING_DISABLED}
+          />
+        }
+        placement="top-center"
+      >
         {arrow}
       </Tooltip>
     );
+  }
+
+  if (disabled) {
+    return arrow;
   }
 
   return (
@@ -49,7 +57,7 @@ export default ({
       style={{
         cursor: "pointer",
         margin: 0,
-        color: color ?? theme.text.primary,
+        color: theme.text.secondary,
       }}
       onClick={(event) => {
         event.preventDefault();

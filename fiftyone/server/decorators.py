@@ -1,7 +1,7 @@
 """
 FiftyOne Server decorators
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
@@ -34,7 +34,8 @@ class Encoder(JSONEncoder):
 
 async def create_response(response: dict):
     return Response(
-        await run_sync_task(lambda: json_util.dumps(response, cls=Encoder))
+        await run_sync_task(lambda: json_util.dumps(response, cls=Encoder)),
+        headers={"Content-Type": "application/json"},
     )
 
 

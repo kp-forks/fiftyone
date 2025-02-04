@@ -1,10 +1,11 @@
 """
 FiftyOne delegated operation repository document.
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
+
 import logging
 from datetime import datetime
 
@@ -23,21 +24,26 @@ class DelegatedOperationDocument(object):
         self,
         operator: str = None,
         delegation_target: str = None,
-        context: dict = None,
+        context: ExecutionContext = None,
+        is_remote: bool = False,
     ):
         self.operator = operator
         self.label = None
         self.delegation_target = delegation_target
-        self.context = (
-            context.to_dict()
-            if isinstance(context, ExecutionContext)
-            else context
-        )
+        if isinstance(context, ExecutionContext) or context is None:
+            pass
+        else:
+            raise AttributeError(
+                "context must be an instance of ExecutionContext"
+            )
+        self.context = context
         self.run_state = (
-            ExecutionRunState.QUEUED
-        )  # default to queued state on create
+            ExecutionRunState.SCHEDULED
+            if is_remote
+            else ExecutionRunState.QUEUED
+        )  # if running locally use QUEUED otherwise SCHEDULED
         self.run_link = None
-        self.queued_at = datetime.utcnow()
+        self.queued_at = datetime.utcnow() if not is_remote else None
         self.updated_at = datetime.utcnow()
         self.status = None
         self.dataset_id = None
@@ -45,31 +51,40 @@ class DelegatedOperationDocument(object):
         self.pinned = False
         self.completed_at = None
         self.failed_at = None
+        self.scheduled_at = datetime.utcnow() if is_remote else None
         self.result = None
         self.id = None
         self._doc = None
+        self.metadata = None
+        self.log_upload_error = None
+        self.log_path = None
 
     def from_pymongo(self, doc: dict):
         # required fields
-        self.operator = doc["operator"]
-        self.queued_at = doc["queued_at"]
-        self.run_state = doc["run_state"]
-        self.label = doc["label"] if "label" in doc else None
-        self.updated_at = doc["updated_at"] if "updated_at" in doc else None
+        self.operator = doc.get("operator")
+        self.queued_at = doc.get("queued_at")
+        self.run_state = doc.get("run_state")
 
         # optional fields
-        self.delegation_target = (
-            doc["delegation_target"] if "delegation_target" in doc else None
-        )
-        self.started_at = doc["started_at"] if "started_at" in doc else None
-        self.completed_at = (
-            doc["completed_at"] if "completed_at" in doc else None
-        )
-        self.failed_at = doc["failed_at"] if "failed_at" in doc else None
-        self.pinned = doc["pinned"] if "pinned" in doc else None
-        self.dataset_id = doc["dataset_id"] if "dataset_id" in doc else None
-        self.run_link = doc["run_link"] if "run_link" in doc else None
+        self.delegation_target = doc.get("delegation_target", None)
+        self.started_at = doc.get("started_at", None)
+        self.completed_at = doc.get("completed_at", None)
+        self.failed_at = doc.get("failed_at", None)
+        self.scheduled_at = doc.get("scheduled_at", None)
+        self.pinned = doc.get("pinned", None)
+        self.dataset_id = doc.get("dataset_id", None)
+        self.run_link = doc.get("run_link", None)
+        self.log_upload_error = doc.get("log_upload_error", None)
+        self.log_path = doc.get("log_path", None)
+        self.metadata = doc.get("metadata", None)
+        self.label = doc.get("label", None)
+        self.updated_at = doc.get("updated_at", None)
 
+        # internal fields
+        self.id = doc["_id"]
+        self._doc = doc
+
+        # nested fields
         if (
             "context" in doc
             and doc["context"] is not None
@@ -98,19 +113,14 @@ class DelegatedOperationDocument(object):
             if "updated_at" in doc["status"]:
                 self.status.updated_at = doc["status"]["updated_at"]
 
-        # internal fields
-        self.id = doc["_id"]
-        self._doc = doc
-
         return self
 
     def to_pymongo(self) -> dict:
         d = self.__dict__
-        d["context"] = (
-            d["context"].to_dict()
-            if isinstance(d["context"], ExecutionContext)
-            else d["context"]
-        )
+        if self.context:
+            d["context"] = {
+                "request_params": self.context._get_serialized_request_params()
+            }
         d.pop("_doc")
         d.pop("id")
         return d

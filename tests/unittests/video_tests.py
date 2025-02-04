@@ -1,7 +1,7 @@
 """
 FiftyOne video-related unit tests.
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
@@ -13,7 +13,9 @@ import numpy as np
 import unittest
 
 import fiftyone as fo
+import fiftyone.core.clips as foc
 import fiftyone.core.odm as foo
+import fiftyone.core.video as fov
 from fiftyone import ViewField as F
 
 from decorators import drop_datasets
@@ -128,13 +130,17 @@ class VideoTests(unittest.TestCase):
 
         info = dataset.get_index_information()
         indexes = dataset.list_indexes()
-
         default_indexes = {
             "id",
             "filepath",
+            "created_at",
+            "last_modified_at",
             "frames.id",
+            "frames.created_at",
+            "frames.last_modified_at",
             "frames._sample_id_1_frame_number_1",
         }
+
         self.assertSetEqual(set(info.keys()), default_indexes)
         self.assertSetEqual(set(indexes), default_indexes)
 
@@ -300,6 +306,10 @@ class VideoTests(unittest.TestCase):
             sample.frames[1]["int"] = idx + 1
             sample.save()
 
+        last_modified_at1 = dataset.values(
+            "frames.last_modified_at", unwind=True
+        )
+
         self.assertTupleEqual(dataset.bounds("int"), (1, 50))
         self.assertTupleEqual(dataset.bounds("frames.int"), (1, 50))
         self.assertEqual(first_sample.int, 1)
@@ -310,19 +320,37 @@ class VideoTests(unittest.TestCase):
             sample.frames[1]["int"] = idx + 2
             sample.save()
 
+        last_modified_at2 = dataset.values(
+            "frames.last_modified_at", unwind=True
+        )
+
         self.assertTupleEqual(dataset.bounds("int"), (2, 51))
         self.assertTupleEqual(dataset.bounds("frames.int"), (2, 51))
         self.assertEqual(first_sample.int, 2)
         self.assertEqual(first_frame.int, 2)
+        self.assertTrue(
+            all(
+                m1 < m2 for m1, m2 in zip(last_modified_at1, last_modified_at2)
+            )
+        )
 
         for idx, sample in enumerate(dataset.iter_samples(autosave=True)):
             sample["int"] = idx + 3
             sample.frames[1]["int"] = idx + 3
 
+        last_modified_at3 = dataset.values(
+            "frames.last_modified_at", unwind=True
+        )
+
         self.assertTupleEqual(dataset.bounds("int"), (3, 52))
         self.assertTupleEqual(dataset.bounds("frames.int"), (3, 52))
         self.assertEqual(first_sample.int, 3)
         self.assertEqual(first_frame.int, 3)
+        self.assertTrue(
+            all(
+                m2 < m3 for m2, m3 in zip(last_modified_at2, last_modified_at3)
+            )
+        )
 
         with dataset.save_context() as context:
             for idx, sample in enumerate(dataset):
@@ -330,10 +358,19 @@ class VideoTests(unittest.TestCase):
                 sample.frames[1]["int"] = idx + 4
                 context.save(sample)
 
+        last_modified_at4 = dataset.values(
+            "frames.last_modified_at", unwind=True
+        )
+
         self.assertTupleEqual(dataset.bounds("int"), (4, 53))
         self.assertTupleEqual(dataset.bounds("frames.int"), (4, 53))
         self.assertEqual(first_sample.int, 4)
         self.assertEqual(first_frame.int, 4)
+        self.assertTrue(
+            all(
+                m3 < m4 for m3, m4 in zip(last_modified_at3, last_modified_at4)
+            )
+        )
 
     @drop_datasets
     def test_iter_samples_view(self):
@@ -353,6 +390,10 @@ class VideoTests(unittest.TestCase):
             sample.frames[1]["int"] = idx + 1
             sample.save()
 
+        last_modified_at1 = dataset.values(
+            "frames.last_modified_at", unwind=True
+        )
+
         self.assertTupleEqual(dataset.bounds("int"), (1, 50))
         self.assertTupleEqual(dataset.bounds("frames.int"), (1, 50))
         self.assertEqual(first_sample.int, 1)
@@ -363,19 +404,37 @@ class VideoTests(unittest.TestCase):
             sample.frames[1]["int"] = idx + 2
             sample.save()
 
+        last_modified_at2 = dataset.values(
+            "frames.last_modified_at", unwind=True
+        )
+
         self.assertTupleEqual(dataset.bounds("int"), (2, 51))
         self.assertTupleEqual(dataset.bounds("frames.int"), (2, 51))
         self.assertEqual(first_sample.int, 2)
         self.assertEqual(first_frame.int, 2)
+        self.assertTrue(
+            all(
+                m1 < m2 for m1, m2 in zip(last_modified_at1, last_modified_at2)
+            )
+        )
 
         for idx, sample in enumerate(view.iter_samples(autosave=True)):
             sample["int"] = idx + 3
             sample.frames[1]["int"] = idx + 3
 
+        last_modified_at3 = dataset.values(
+            "frames.last_modified_at", unwind=True
+        )
+
         self.assertTupleEqual(dataset.bounds("int"), (3, 52))
         self.assertTupleEqual(dataset.bounds("frames.int"), (3, 52))
         self.assertEqual(first_sample.int, 3)
         self.assertEqual(first_frame.int, 3)
+        self.assertTrue(
+            all(
+                m2 < m3 for m2, m3 in zip(last_modified_at2, last_modified_at3)
+            )
+        )
 
         with view.save_context() as context:
             for idx, sample in enumerate(view):
@@ -383,10 +442,19 @@ class VideoTests(unittest.TestCase):
                 sample.frames[1]["int"] = idx + 4
                 context.save(sample)
 
+        last_modified_at4 = dataset.values(
+            "frames.last_modified_at", unwind=True
+        )
+
         self.assertTupleEqual(dataset.bounds("int"), (4, 53))
         self.assertTupleEqual(dataset.bounds("frames.int"), (4, 53))
         self.assertEqual(first_sample.int, 4)
         self.assertEqual(first_frame.int, 4)
+        self.assertTrue(
+            all(
+                m3 < m4 for m3, m4 in zip(last_modified_at3, last_modified_at4)
+            )
+        )
 
     @drop_datasets
     def test_modify_video_sample(self):
@@ -464,7 +532,7 @@ class VideoTests(unittest.TestCase):
 
         self.assertEqual(sample.frames[1].hello, "world")
 
-        # Overwriting an existing frame is alloed
+        # Overwriting an existing frame is allowed
         sample.frames[1] = fo.Frame(goodbye="world")
         sample.save()
 
@@ -478,7 +546,7 @@ class VideoTests(unittest.TestCase):
         frame = dataset.first().frames[1]
 
         self.assertEqual(frame.hello, None)
-        self.assertEqual(frame.goodbye, "world")
+        self.assertEqual(frame.goodbye, None)
         self.assertEqual(frame.new, "field")
 
     @drop_datasets
@@ -1041,13 +1109,17 @@ class VideoTests(unittest.TestCase):
             d1 = dataset1.clone()
             d1.merge_samples(dataset2, skip_existing=True, key_fcn=key_fcn)
 
-            fields1 = set(dataset1.get_frame_field_schema().keys())
-            fields2 = set(d1.get_frame_field_schema().keys())
+            dt_fields = {"created_at", "last_modified_at"}
+            fields1 = set(dataset1.get_frame_field_schema().keys()) - dt_fields
+            fields2 = set(d1.get_frame_field_schema().keys()) - dt_fields
             new_fields = fields2 - fields1
 
             self.assertEqual(len(d1), 3)
             for s1, s2 in zip(dataset1, d1):
                 for f1, f2 in zip(s1.frames.values(), s2.frames.values()):
+                    for field in dt_fields:
+                        self.assertTrue(f1[field] < f2[field])
+
                     for field in fields1:
                         self.assertEqual(f1[field], f2[field])
 
@@ -1472,6 +1544,8 @@ class VideoTests(unittest.TestCase):
                 "support",
                 "metadata",
                 "tags",
+                "created_at",
+                "last_modified_at",
                 "events",
             },
         )
@@ -1488,7 +1562,16 @@ class VideoTests(unittest.TestCase):
 
         self.assertSetEqual(
             set(view.select_fields().get_field_schema().keys()),
-            {"id", "sample_id", "filepath", "support", "metadata", "tags"},
+            {
+                "id",
+                "sample_id",
+                "filepath",
+                "support",
+                "metadata",
+                "tags",
+                "created_at",
+                "last_modified_at",
+            },
         )
 
         with self.assertRaises(ValueError):
@@ -1499,14 +1582,18 @@ class VideoTests(unittest.TestCase):
 
         index_info = view.get_index_information()
         indexes = view.list_indexes()
-
         default_indexes = {
             "id",
             "filepath",
+            "created_at",
+            "last_modified_at",
             "sample_id",
             "frames.id",
+            "frames.created_at",
+            "frames.last_modified_at",
             "frames._sample_id_1_frame_number_1",
         }
+
         self.assertSetEqual(set(index_info.keys()), default_indexes)
         self.assertSetEqual(set(indexes), default_indexes)
 
@@ -1809,6 +1896,203 @@ class VideoTests(unittest.TestCase):
             frame["detections"]
 
     @drop_datasets
+    def test_to_clips_datetimes(self):
+        dataset = fo.Dataset()
+
+        sample1 = fo.Sample(
+            filepath="video1.mp4",
+            metadata=fo.VideoMetadata(total_frame_count=4),
+        )
+        sample1.frames[1] = fo.Frame(hello="world")
+        sample1.frames[2] = fo.Frame()
+        sample1.frames[3] = fo.Frame(hello="goodbye")
+
+        sample2 = fo.Sample(
+            filepath="video2.mp4",
+            metadata=fo.VideoMetadata(total_frame_count=5),
+        )
+        sample2.frames[1] = fo.Frame(hello="goodbye")
+        sample2.frames[3] = fo.Frame()
+        sample2.frames[5] = fo.Frame(hello="there")
+
+        dataset.add_samples([sample1, sample2])
+
+        field = dataset.get_field("frames.hello")
+        field.read_only = True
+        field.save()
+
+        clips = dataset.to_clips([[(2, 3)], [(2, 4)]])
+
+        field = clips.get_field("frames.hello")
+        self.assertTrue(field.read_only)
+
+        clip = clips.first()
+
+        with self.assertRaises(ValueError):
+            clip.created_at = datetime.utcnow()
+
+        with self.assertRaises(ValueError):
+            clip.last_modified_at = datetime.utcnow()
+
+        with self.assertRaises(ValueError):
+            clip.frames[2].hello = "no"
+
+        clip.reload()
+
+        # ClipFrame.save()
+
+        created_at1 = dataset.values("frames.created_at", unwind=True)
+        last_modified_at1 = dataset.values(
+            "frames.last_modified_at", unwind=True
+        )
+        created_at1c = clips.values("frames.created_at", unwind=True)
+        last_modified_at1c = clips.values(
+            "frames.last_modified_at", unwind=True
+        )
+
+        for clip in clips.iter_samples():
+            for frame in clip.frames.values():
+                frame["foo"] = "bar"
+                frame.save()
+
+        created_at2 = dataset.values("frames.created_at", unwind=True)
+        last_modified_at2 = dataset.values(
+            "frames.last_modified_at", unwind=True
+        )
+        created_at2c = clips.values("frames.created_at", unwind=True)
+        last_modified_at2c = clips.values(
+            "frames.last_modified_at", unwind=True
+        )
+
+        self.assertTrue(
+            all(dt1 == dt2 for dt1, dt2 in zip(created_at1, created_at2))
+        )
+        self.assertTrue(max(last_modified_at1) < max(last_modified_at2))
+        self.assertTrue(
+            all(dt1 == dt2 for dt1, dt2 in zip(created_at1c, created_at2c))
+        )
+        self.assertTrue(
+            all(
+                dt1 < dt2
+                for dt1, dt2 in zip(last_modified_at1c, last_modified_at2c)
+            )
+        )
+
+        # ClipFrameView.save()
+
+        view = clips.select_fields("frames.hello")
+
+        created_at1 = dataset.values("frames.created_at", unwind=True)
+        last_modified_at1 = dataset.values(
+            "frames.last_modified_at", unwind=True
+        )
+        created_at1c = view.values("frames.created_at", unwind=True)
+        last_modified_at1c = view.values(
+            "frames.last_modified_at", unwind=True
+        )
+
+        for clip in view.iter_samples():
+            for frame in clip.frames.values():
+                frame["spam"] = "eggs"
+
+            clip.save()
+
+        created_at2 = dataset.values("frames.created_at", unwind=True)
+        last_modified_at2 = dataset.values(
+            "frames.last_modified_at", unwind=True
+        )
+        created_at2c = view.values("frames.created_at", unwind=True)
+        last_modified_at2c = view.values(
+            "frames.last_modified_at", unwind=True
+        )
+
+        self.assertTrue(
+            all(dt1 == dt2 for dt1, dt2 in zip(created_at1, created_at2))
+        )
+        self.assertTrue(max(last_modified_at1) < max(last_modified_at2))
+        self.assertTrue(
+            all(dt1 == dt2 for dt1, dt2 in zip(created_at1c, created_at2c))
+        )
+        self.assertTrue(
+            all(
+                dt1 < dt2
+                for dt1, dt2 in zip(last_modified_at1c, last_modified_at2c)
+            )
+        )
+
+        # ClipsView.set_values()
+
+        created_at1 = dataset.values("frames.created_at", unwind=True)
+        last_modified_at1 = dataset.values(
+            "frames.last_modified_at", unwind=True
+        )
+        created_at1c = clips.values("frames.created_at", unwind=True)
+        last_modified_at1c = clips.values(
+            "frames.last_modified_at", unwind=True
+        )
+
+        clips.set_values("frames.foo", [["baz", "baz"], ["baz"]])
+
+        created_at2 = dataset.values("frames.created_at", unwind=True)
+        last_modified_at2 = dataset.values(
+            "frames.last_modified_at", unwind=True
+        )
+        created_at2c = clips.values("frames.created_at", unwind=True)
+        last_modified_at2c = clips.values(
+            "frames.last_modified_at", unwind=True
+        )
+
+        self.assertTrue(
+            all(dt1 == dt2 for dt1, dt2 in zip(created_at1, created_at2))
+        )
+        self.assertTrue(max(last_modified_at1) < max(last_modified_at2))
+        self.assertTrue(
+            all(dt1 == dt2 for dt1, dt2 in zip(created_at1c, created_at2c))
+        )
+        self.assertTrue(
+            all(
+                dt1 < dt2
+                for dt1, dt2 in zip(last_modified_at1c, last_modified_at2c)
+            )
+        )
+
+        # ClipsView.save()
+
+        created_at1 = dataset.values("frames.created_at", unwind=True)
+        last_modified_at1 = dataset.values(
+            "frames.last_modified_at", unwind=True
+        )
+        created_at1c = clips.values("frames.created_at", unwind=True)
+        last_modified_at1c = clips.values(
+            "frames.last_modified_at", unwind=True
+        )
+
+        clips.set_field("frames.spam", "eggz").save()
+
+        created_at2 = dataset.values("frames.created_at", unwind=True)
+        last_modified_at2 = dataset.values(
+            "frames.last_modified_at", unwind=True
+        )
+        created_at2c = clips.values("frames.created_at", unwind=True)
+        last_modified_at2c = clips.values(
+            "frames.last_modified_at", unwind=True
+        )
+
+        self.assertTrue(
+            all(dt1 == dt2 for dt1, dt2 in zip(created_at1, created_at2))
+        )
+        self.assertTrue(max(last_modified_at1) < max(last_modified_at2))
+        self.assertTrue(
+            all(dt1 == dt2 for dt1, dt2 in zip(created_at1c, created_at2c))
+        )
+        self.assertTrue(
+            all(
+                dt1 < dt2
+                for dt1, dt2 in zip(last_modified_at1c, last_modified_at2c)
+            )
+        )
+
+    @drop_datasets
     def test_to_frames(self):
         dataset = fo.Dataset()
 
@@ -1860,6 +2144,8 @@ class VideoTests(unittest.TestCase):
                 "filepath",
                 "metadata",
                 "tags",
+                "created_at",
+                "last_modified_at",
                 "sample_id",
                 "frame_number",
                 "hello",
@@ -1884,6 +2170,8 @@ class VideoTests(unittest.TestCase):
                 "filepath",
                 "metadata",
                 "tags",
+                "created_at",
+                "last_modified_at",
                 "sample_id",
                 "frame_number",
             },
@@ -1897,13 +2185,15 @@ class VideoTests(unittest.TestCase):
 
         index_info = view.get_index_information()
         indexes = view.list_indexes()
-
         default_indexes = {
             "id",
             "filepath",
+            "created_at",
+            "last_modified_at",
             "sample_id",
             "_sample_id_1_frame_number_1",
         }
+
         self.assertSetEqual(set(index_info.keys()), default_indexes)
         self.assertSetEqual(set(indexes), default_indexes)
 
@@ -2198,6 +2488,301 @@ class VideoTests(unittest.TestCase):
         self.assertEqual(dataset.first().frames.first().filepath, "BAR.JPG")
 
     @drop_datasets
+    def test_make_frames_dataset(self):
+        dataset = fo.Dataset()
+
+        sample1 = fo.Sample(
+            filepath="video1.mp4",
+            metadata=fo.VideoMetadata(total_frame_count=4),
+            tags=["test"],
+            weather="sunny",
+        )
+        sample1.frames[1] = fo.Frame(filepath="frame11.jpg", hello="world")
+        sample1.frames[2] = fo.Frame(
+            filepath="frame12.jpg",
+            ground_truth=fo.Detections(
+                detections=[
+                    fo.Detection(label="cat"),
+                    fo.Detection(label="dog"),
+                ]
+            ),
+        )
+        sample1.frames[3] = fo.Frame(filepath="frame13.jpg", hello="goodbye")
+
+        sample2 = fo.Sample(
+            filepath="video2.mp4",
+            metadata=fo.VideoMetadata(total_frame_count=5),
+            tags=["test"],
+            weather="cloudy",
+        )
+        sample2.frames[1] = fo.Frame(
+            filepath="frame21.jpg",
+            hello="goodbye",
+            ground_truth=fo.Detections(
+                detections=[
+                    fo.Detection(label="dog"),
+                    fo.Detection(label="rabbit"),
+                ]
+            ),
+        )
+        sample2.frames[3] = fo.Frame(filepath="frame23.jpg")
+        sample2.frames[5] = fo.Frame(filepath="frame25.jpg", hello="there")
+
+        dataset.add_samples([sample1, sample2])
+
+        frames_view = dataset.to_frames()
+        frames_dataset = fov.make_frames_dataset(dataset)
+
+        self.assertNotEqual(
+            frames_dataset._sample_collection_name,
+            dataset._sample_collection_name,
+        )
+        self.assertIsNone(frames_dataset._frame_collection_name)
+        self.assertTrue(frames_view._is_generated)
+        self.assertFalse(frames_dataset._is_generated)
+        self.assertEqual(len(frames_dataset), dataset.count("frames"))
+        self.assertEqual(len(frames_dataset), len(frames_view))
+
+    @drop_datasets
+    def test_frames_save_context(self):
+        dataset = fo.Dataset()
+
+        sample1 = fo.Sample(filepath="video1.mp4")
+        sample1.frames[1] = fo.Frame(filepath="frame11.jpg")
+        sample1.frames[2] = fo.Frame(filepath="frame12.jpg")
+        sample1.frames[3] = fo.Frame(filepath="frame13.jpg")
+
+        sample2 = fo.Sample(filepath="video2.mp4")
+
+        sample3 = fo.Sample(filepath="video3.mp4")
+        sample3.frames[1] = fo.Frame(filepath="frame31.jpg")
+
+        dataset.add_samples([sample1, sample2, sample3])
+
+        view = dataset.to_frames()
+
+        for sample in view.iter_samples(autosave=True):
+            sample["foo"] = "bar"
+
+        self.assertEqual(view.count("foo"), 4)
+        self.assertEqual(dataset.count("frames.foo"), 4)
+
+    @drop_datasets
+    def test_to_frames_datetimes(self):
+        dataset = fo.Dataset()
+
+        sample1 = fo.Sample(
+            filepath="video1.mp4",
+            metadata=fo.VideoMetadata(total_frame_count=4),
+        )
+        sample1.frames[1] = fo.Frame(
+            filepath="frame11.jpg",
+            ground_truth=fo.Classification(label="cat"),
+            predictions=fo.Detections(detections=[fo.Detection(label="cat")]),
+        )
+        sample1.frames[2] = fo.Frame(filepath="frame12.jpg")
+        sample1.frames[3] = fo.Frame(filepath="frame13.jpg")
+
+        sample2 = fo.Sample(
+            filepath="video2.mp4",
+            metadata=fo.VideoMetadata(total_frame_count=5),
+        )
+        sample2.frames[1] = fo.Frame(filepath="frame21.jpg")
+        sample2.frames[3] = fo.Frame(filepath="frame23.jpg")
+        sample2.frames[5] = fo.Frame(filepath="frame25.jpg")
+
+        dataset.add_samples([sample1, sample2])
+
+        field = dataset.get_field("frames.filepath")
+        field.read_only = True
+        field.save()
+
+        field = dataset.get_field("frames.predictions.detections.label")
+        field.read_only = True
+        field.save()
+
+        frames = dataset.to_frames()
+
+        field = frames.get_field("filepath")
+        self.assertTrue(field.read_only)
+
+        field = frames.get_field("predictions.detections.label")
+        self.assertTrue(field.read_only)
+
+        frame = frames.first()
+
+        with self.assertRaises(ValueError):
+            frame.created_at = datetime.utcnow()
+
+        with self.assertRaises(ValueError):
+            frame.last_modified_at = datetime.utcnow()
+
+        with self.assertRaises(ValueError):
+            frame.filepath = "no.jpg"
+
+        frame.reload()
+
+        frame.predictions.detections[0].label = "dog"
+        with self.assertRaises(ValueError):
+            frame.save()
+
+        frame.reload()
+
+        # Frame.save()
+
+        created_at1 = dataset.values("frames.created_at", unwind=True)
+        last_modified_at1 = dataset.values(
+            "frames.last_modified_at", unwind=True
+        )
+        created_at1f = frames.values("created_at")
+        last_modified_at1f = frames.values("last_modified_at")
+
+        for frame in frames.iter_samples():
+            frame["foo"] = "bar"
+            frame.save()
+
+        created_at2 = dataset.values("frames.created_at", unwind=True)
+        last_modified_at2 = dataset.values(
+            "frames.last_modified_at", unwind=True
+        )
+        created_at2f = frames.values("created_at")
+        last_modified_at2f = frames.values("last_modified_at")
+
+        self.assertTrue(
+            all(dt1 == dt2 for dt1, dt2 in zip(created_at1, created_at2))
+        )
+        self.assertTrue(
+            all(
+                dt1 < dt2
+                for dt1, dt2 in zip(last_modified_at1, last_modified_at2)
+            )
+        )
+        self.assertTrue(
+            all(dt1 == dt2 for dt1, dt2 in zip(created_at1f, created_at2f))
+        )
+        self.assertTrue(
+            all(
+                dt1 < dt2
+                for dt1, dt2 in zip(last_modified_at1f, last_modified_at2f)
+            )
+        )
+
+        # FrameView.save()
+
+        view = frames.select_fields()
+
+        created_at1 = dataset.values("frames.created_at", unwind=True)
+        last_modified_at1 = dataset.values(
+            "frames.last_modified_at", unwind=True
+        )
+        created_at1f = view.values("created_at")
+        last_modified_at1f = view.values("last_modified_at")
+
+        for frame in view.iter_samples():
+            frame["spam"] = "eggs"
+            frame.save()
+
+        created_at2 = dataset.values("frames.created_at", unwind=True)
+        last_modified_at2 = dataset.values(
+            "frames.last_modified_at", unwind=True
+        )
+        created_at2f = view.values("created_at")
+        last_modified_at2f = view.values("last_modified_at")
+
+        self.assertTrue(
+            all(dt1 == dt2 for dt1, dt2 in zip(created_at1, created_at2))
+        )
+        self.assertTrue(
+            all(
+                dt1 < dt2
+                for dt1, dt2 in zip(last_modified_at1, last_modified_at2)
+            )
+        )
+        self.assertTrue(
+            all(dt1 == dt2 for dt1, dt2 in zip(created_at1f, created_at2f))
+        )
+        self.assertTrue(
+            all(
+                dt1 < dt2
+                for dt1, dt2 in zip(last_modified_at1f, last_modified_at2f)
+            )
+        )
+
+        # FramesView.set_values()
+
+        created_at1 = dataset.values("frames.created_at", unwind=True)
+        last_modified_at1 = dataset.values(
+            "frames.last_modified_at", unwind=True
+        )
+        created_at1f = frames.values("created_at")
+        last_modified_at1f = frames.values("last_modified_at")
+
+        frames.set_values("foo", ["baz"] * len(frames))
+
+        created_at2 = dataset.values("frames.created_at", unwind=True)
+        last_modified_at2 = dataset.values(
+            "frames.last_modified_at", unwind=True
+        )
+        created_at2f = frames.values("created_at")
+        last_modified_at2f = frames.values("last_modified_at")
+
+        self.assertTrue(
+            all(dt1 == dt2 for dt1, dt2 in zip(created_at1, created_at2))
+        )
+        self.assertTrue(
+            all(
+                dt1 < dt2
+                for dt1, dt2 in zip(last_modified_at1, last_modified_at2)
+            )
+        )
+        self.assertTrue(
+            all(dt1 == dt2 for dt1, dt2 in zip(created_at1f, created_at2f))
+        )
+        self.assertTrue(
+            all(
+                dt1 < dt2
+                for dt1, dt2 in zip(last_modified_at1f, last_modified_at2f)
+            )
+        )
+
+        # FramesView.save()
+
+        created_at1 = dataset.values("frames.created_at", unwind=True)
+        last_modified_at1 = dataset.values(
+            "frames.last_modified_at", unwind=True
+        )
+        created_at1f = frames.values("created_at")
+        last_modified_at1f = frames.values("last_modified_at")
+
+        frames.set_field("spam", "eggz").save()
+
+        created_at2 = dataset.values("frames.created_at", unwind=True)
+        last_modified_at2 = dataset.values(
+            "frames.last_modified_at", unwind=True
+        )
+        created_at2f = frames.values("created_at")
+        last_modified_at2f = frames.values("last_modified_at")
+
+        self.assertTrue(
+            all(dt1 == dt2 for dt1, dt2 in zip(created_at1, created_at2))
+        )
+        self.assertTrue(
+            all(
+                dt1 < dt2
+                for dt1, dt2 in zip(last_modified_at1, last_modified_at2)
+            )
+        )
+        self.assertTrue(
+            all(dt1 == dt2 for dt1, dt2 in zip(created_at1f, created_at2f))
+        )
+        self.assertTrue(
+            all(
+                dt1 < dt2
+                for dt1, dt2 in zip(last_modified_at1f, last_modified_at2f)
+            )
+        )
+
+    @drop_datasets
     def test_to_clip_frames(self):
         dataset = fo.Dataset()
 
@@ -2262,6 +2847,8 @@ class VideoTests(unittest.TestCase):
                 "filepath",
                 "metadata",
                 "tags",
+                "created_at",
+                "last_modified_at",
                 "sample_id",
                 "frame_number",
                 "hello",
@@ -2276,6 +2863,8 @@ class VideoTests(unittest.TestCase):
                 "filepath",
                 "metadata",
                 "tags",
+                "created_at",
+                "last_modified_at",
                 "sample_id",
                 "frame_number",
             },
@@ -2294,13 +2883,15 @@ class VideoTests(unittest.TestCase):
 
         index_info = view.get_index_information()
         indexes = view.list_indexes()
-
         default_indexes = {
             "id",
             "filepath",
+            "created_at",
+            "last_modified_at",
             "sample_id",
             "_sample_id_1_frame_number_1",
         }
+
         self.assertSetEqual(set(index_info.keys()), default_indexes)
         self.assertSetEqual(set(indexes), default_indexes)
 
@@ -2507,6 +3098,8 @@ class VideoTests(unittest.TestCase):
                 "filepath",
                 "metadata",
                 "tags",
+                "created_at",
+                "last_modified_at",
                 "sample_id",
                 "frame_id",
                 "frame_number",
@@ -2521,6 +3114,8 @@ class VideoTests(unittest.TestCase):
                 "filepath",
                 "metadata",
                 "tags",
+                "created_at",
+                "last_modified_at",
                 "sample_id",
                 "frame_id",
                 "frame_number",
@@ -2540,14 +3135,16 @@ class VideoTests(unittest.TestCase):
 
         index_info = patches.get_index_information()
         indexes = patches.list_indexes()
-
         default_indexes = {
             "id",
             "filepath",
+            "created_at",
+            "last_modified_at",
             "sample_id",
             "frame_id",
             "_sample_id_1_frame_number_1",
         }
+
         self.assertSetEqual(set(index_info.keys()), default_indexes)
         self.assertSetEqual(set(indexes), default_indexes)
 
@@ -3223,6 +3820,123 @@ class VideoTests(unittest.TestCase):
 
         schema = trajectories.get_frame_field_schema()
         self.assertIn("detections", schema)
+
+    @drop_datasets
+    def test_make_clips_dataset(self):
+        dataset = fo.Dataset()
+
+        sample1 = fo.Sample(
+            filepath="video1.mp4",
+            metadata=fo.VideoMetadata(total_frame_count=4),
+            tags=["test"],
+            weather="sunny",
+            events=fo.TemporalDetections(
+                detections=[
+                    fo.TemporalDetection(label="meeting", support=[1, 3]),
+                    fo.TemporalDetection(label="party", support=[2, 4]),
+                ]
+            ),
+        )
+        sample1.frames[1] = fo.Frame(hello="world")
+        sample1.frames[2] = fo.Frame(
+            ground_truth=fo.Detections(
+                detections=[
+                    fo.Detection(label="cat"),
+                    fo.Detection(label="dog"),
+                ]
+            )
+        )
+        sample1.frames[3] = fo.Frame(hello="goodbye")
+
+        sample2 = fo.Sample(
+            filepath="video2.mp4",
+            metadata=fo.VideoMetadata(total_frame_count=5),
+            tags=["test"],
+            weather="cloudy",
+            events=fo.TemporalDetections(
+                detections=[
+                    fo.TemporalDetection(label="party", support=[3, 5]),
+                    fo.TemporalDetection(label="meeting", support=[1, 3]),
+                ]
+            ),
+        )
+        sample2.frames[1] = fo.Frame(
+            hello="goodbye",
+            ground_truth=fo.Detections(
+                detections=[
+                    fo.Detection(label="dog"),
+                    fo.Detection(label="rabbit"),
+                ]
+            ),
+        )
+        sample2.frames[3] = fo.Frame()
+        sample2.frames[5] = fo.Frame(hello="there")
+
+        dataset.add_samples([sample1, sample2])
+
+        clips_view = dataset.to_clips("events")
+        clips_dataset = foc.make_clips_dataset(dataset, "events")
+
+        self.assertNotEqual(
+            clips_dataset._sample_collection_name,
+            dataset._sample_collection_name,
+        )
+        self.assertNotEqual(
+            clips_dataset._frame_collection_name,
+            dataset._frame_collection_name,
+        )
+        self.assertTrue(clips_view._is_generated)
+        self.assertFalse(clips_dataset._is_generated)
+        self.assertEqual(len(clips_dataset), len(clips_view))
+        self.assertEqual(
+            clips_dataset.count("frames"), clips_view.count("frames")
+        )
+
+    @drop_datasets
+    def test_clips_save_context(self):
+        dataset = fo.Dataset()
+
+        sample1 = fo.Sample(
+            filepath="video1.mp4",
+            events=fo.TemporalDetections(
+                detections=[
+                    fo.TemporalDetection(label="meeting", support=[1, 3]),
+                    fo.TemporalDetection(label="party", support=[2, 4]),
+                ]
+            ),
+        )
+        sample1.frames[1] = fo.Frame()
+        sample1.frames[2] = fo.Frame()
+        sample1.frames[3] = fo.Frame()
+
+        sample2 = fo.Sample(filepath="video2.mp4")
+
+        sample3 = fo.Sample(
+            filepath="video3.mp4",
+            events=fo.TemporalDetections(
+                detections=[
+                    fo.TemporalDetection(label="party", support=[3, 5]),
+                ]
+            ),
+        )
+        sample3.frames[1] = fo.Frame()
+        sample3.frames[3] = fo.Frame()
+        sample3.frames[5] = fo.Frame()
+
+        dataset.add_samples([sample1, sample2, sample3])
+
+        view = dataset.to_clips("events")
+
+        for sample in view.iter_samples(autosave=True):
+            sample.events.foo = "bar"
+            for frame in sample.frames.values():
+                frame["foo"] = "bar"
+
+        self.assertEqual(view.count("events.foo"), 3)
+        # tricky: this is 7 because `view` contains overlapping frame supports
+        self.assertEqual(view.count("frames.foo"), 7)
+        self.assertEqual(dataset.count("events.detections.foo"), 3)
+        self.assertEqual(dataset.count("frames.foo"), 5)
 
 
 if __name__ == "__main__":

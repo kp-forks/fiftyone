@@ -1,9 +1,14 @@
+import { AnalyticsInfo, usingAnalytics } from "@fiftyone/analytics";
+import SpaceNode from "@fiftyone/spaces/src/SpaceNode";
+import { SpaceNodeJSON } from "@fiftyone/spaces/src/types";
+import { spaceNodeFromJSON } from "@fiftyone/spaces/src/utils";
 import { getFetchFunction, isNullish, ServerError } from "@fiftyone/utilities";
 import { CallbackInterface } from "recoil";
+import { QueueItemStatus } from "./constants";
 import * as types from "./types";
+import { ExecutionCallback, OperatorExecutorOptions } from "./types-internal";
 import { stringifyError } from "./utils";
 import { ValidationContext, ValidationError } from "./validation";
-import { ExecutionCallback, OperatorExecutorOptions } from "./types-internal";
 
 type RawInvocationRequest = {
   operator_uri?: string;
@@ -64,6 +69,13 @@ export class Executor {
   }
 }
 
+class Panel {
+  constructor(public id: string) {}
+  static fromJSON(json: any) {
+    return new Panel(json.id);
+  }
+}
+
 export type RawContext = {
   datasetName: string;
   extended: boolean;
@@ -76,7 +88,17 @@ export type RawContext = {
   delegationTarget: string;
   requestDelegation: boolean;
   state: CallbackInterface;
+  analyticsInfo: AnalyticsInfo;
+  extendedSelection: {
+    selection: string[] | null;
+    scope: string;
+  };
+  groupSlice: string;
+  queryPerformance?: boolean;
+  spaces: SpaceNodeJSON;
+  workspaceName: string;
 };
+
 export class ExecutionContext {
   public state: CallbackInterface;
   constructor(
@@ -89,6 +111,50 @@ export class ExecutionContext {
   }
   public delegationTarget: string = null;
   public requestDelegation = false;
+  public currentPanel?: Panel = null;
+  public get datasetName(): string {
+    return this._currentContext.datasetName;
+  }
+  public get view(): string {
+    return this._currentContext.view;
+  }
+  public get extended(): boolean {
+    return this._currentContext.extended;
+  }
+  public get filters(): any {
+    return this._currentContext.filters;
+  }
+  public get selectedSamples(): any {
+    return this._currentContext.selectedSamples;
+  }
+  public get selectedLabels(): any {
+    return this._currentContext.selectedLabels;
+  }
+  public get currentSample(): any {
+    return this._currentContext.currentSample;
+  }
+  public get viewName(): any {
+    return this._currentContext.viewName;
+  }
+  public get extendedSelection(): any {
+    return this._currentContext.extendedSelection;
+  }
+  public get groupSlice(): any {
+    return this._currentContext.groupSlice;
+  }
+  public get queryPerformance(): boolean {
+    return Boolean(this._currentContext.queryPerformance);
+  }
+  public get spaces(): SpaceNode {
+    return spaceNodeFromJSON(this._currentContext.spaces);
+  }
+  public get workspaceName(): string {
+    return this._currentContext.workspaceName;
+  }
+
+  getCurrentPanelId(): string | null {
+    return this.params.panel_id || this.currentPanel?.id || null;
+  }
   trigger(operatorURI: string, params: object = {}) {
     if (!this.executor) {
       throw new Error(
@@ -116,7 +182,8 @@ export class OperatorResult {
     public result: object = {},
     public executor: Executor = null,
     public error: string,
-    public delegated: boolean = false
+    public delegated: boolean = false,
+    public errorMessage: string = null
   ) {}
   hasOutputContent() {
     if (this.delegated) return false;
@@ -146,6 +213,8 @@ export type OperatorConfigOptions = {
   darkIcon?: string;
   lightIcon?: string;
   resolveExecutionOptionsOnChange?: boolean;
+  skipInput?: boolean;
+  skipOutput?: boolean;
 };
 export class OperatorConfig {
   public name: string;
@@ -162,6 +231,9 @@ export class OperatorConfig {
   public darkIcon = null;
   public lightIcon = null;
   public resolveExecutionOptionsOnChange = false;
+  public skipInput: boolean;
+  public skipOutput: boolean;
+
   constructor(options: OperatorConfigOptions) {
     this.name = options.name;
     this.label = options.label || options.name;
@@ -179,6 +251,8 @@ export class OperatorConfig {
     this.lightIcon = options.lightIcon;
     this.resolveExecutionOptionsOnChange =
       options.resolveExecutionOptionsOnChange || false;
+    this.skipInput = options.skipInput || false;
+    this.skipOutput = options.skipOutput || false;
   }
   static fromJSON(json) {
     return new OperatorConfig({
@@ -196,6 +270,8 @@ export class OperatorConfig {
       darkIcon: json.dark_icon,
       lightIcon: json.light_icon,
       resolveExecutionOptionsOnChange: json.resolve_execution_options_on_change,
+      skipInput: json.skip_input,
+      skipOutput: json.skip_output,
     });
   }
 }
@@ -252,12 +328,16 @@ export class Operator {
     return {};
   }
   async resolveInput(ctx: ExecutionContext) {
+    if (this.config.skipInput) return null;
+
     if (this.isRemote) {
       return resolveRemoteType(this.uri, ctx, "inputs");
     }
     return null;
   }
   async resolveOutput(ctx: ExecutionContext, result: OperatorResult) {
+    if (this.config.skipOutput) return null;
+
     if (this.isRemote) {
       return resolveRemoteType(this.uri, ctx, "outputs", result);
     }
@@ -266,7 +346,8 @@ export class Operator {
   async resolvePlacement(): Promise<void | types.Placement> {
     return null;
   }
-  async execute() {
+  async execute(ctx: ExecutionContext) {
+    ctx;
     throw new Error(`Operator ${this.uri} does not implement execute`);
   }
   public isRemote = false;
@@ -364,6 +445,7 @@ export async function loadOperatorsFromServer(datasetName: string) {
 export function getLocalOrRemoteOperator(operatorURI) {
   let operator;
   let isRemote = false;
+  operatorURI = resolveOperatorURI(operatorURI);
   if (localRegistry.operatorExists(operatorURI)) {
     operator = localRegistry.getOperator(operatorURI);
   } else if (remoteRegistry.operatorExists(operatorURI)) {
@@ -461,20 +543,25 @@ async function executeOperatorAsGenerator(
     "POST",
     "/operators/execute/generator",
     {
-      operator_uri: operator.uri,
-      params: ctx.params,
+      current_sample: currentContext.currentSample,
       dataset_name: currentContext.datasetName,
       delegation_target: currentContext.delegationTarget,
       extended: currentContext.extended,
-      view: currentContext.view,
+      extended_selection: currentContext.extendedSelection,
       filters: currentContext.filters,
+      operator_uri: operator.uri,
+      params: ctx.params,
+      request_delegation: ctx.requestDelegation,
       selected: currentContext.selectedSamples
         ? Array.from(currentContext.selectedSamples)
         : [],
       selected_labels: formatSelectedLabels(currentContext.selectedLabels),
-      current_sample: currentContext.currentSample,
-      request_delegation: ctx.requestDelegation,
+      view: currentContext.view,
       view_name: currentContext.viewName,
+      group_slice: currentContext.groupSlice,
+      query_performance: currentContext.queryPerformance,
+      spaces: currentContext.spaces,
+      workspace_name: currentContext.workspaceName,
     },
     "json-stream"
   );
@@ -505,19 +592,48 @@ async function executeOperatorAsGenerator(
   return result;
 }
 
-export function resolveOperatorURI(operatorURI) {
+const HASH = "#";
+
+export function resolveOperatorURI(operatorURI, { keepMethod = false } = {}) {
+  if (!operatorURI) throw new Error("Operator URI is required");
+  if (!keepMethod && operatorURI.includes(HASH))
+    operatorURI = operatorURI.split(HASH)[0];
   if (operatorURI.includes("/")) return operatorURI;
   return `@voxel51/operators/${operatorURI}`;
 }
 
+export function getTargetOperatorMethod(operatorURI) {
+  if (operatorURI && operatorURI.includes(HASH)) {
+    const parts = operatorURI.split(HASH);
+    return parts[1];
+  }
+  return null;
+}
+
+function resolveOperatorURIWithMethod(operatorURI, params) {
+  const targetMethod = getTargetOperatorMethod(operatorURI);
+  if (targetMethod) {
+    params = { ...params, __method__: targetMethod };
+  }
+  return { operatorURI, params };
+}
+
 export async function executeOperator(
-  operatorURI: string,
+  uri: string,
   params: unknown = {},
   options?: OperatorExecutorOptions
 ) {
-  operatorURI = resolveOperatorURI(operatorURI);
+  const { operatorURI, params: computedParams } = resolveOperatorURIWithMethod(
+    uri,
+    params
+  );
+  const resolvedOperatorURI = resolveOperatorURI(operatorURI);
   const queue = getInvocationRequestQueue();
-  const request = new InvocationRequest(operatorURI, params, options);
+  const request = new InvocationRequest(
+    resolvedOperatorURI,
+    computedParams,
+    options
+  );
   queue.add(request);
 }
 
@@ -531,16 +647,42 @@ export async function validateOperatorInputs(
   return [validationCtx, validationErrors];
 }
 
-export async function executeOperatorWithContext(
+function trackOperatorExecution(
   operatorURI,
+  params,
+  { info, delegated, isRemote, error }
+) {
+  const analytics = usingAnalytics(info);
+  const paramKeys = Object.keys(params || {});
+  analytics.trackEvent("execute_operator", {
+    uri: operatorURI,
+    isRemote,
+    delegated,
+    params: paramKeys,
+  });
+  if (error) {
+    analytics.trackEvent("execute_operator_error", {
+      uri: operatorURI,
+      isRemote,
+      delegated,
+      params: paramKeys,
+      error,
+    });
+  }
+}
+
+export async function executeOperatorWithContext(
+  uri: string,
   ctx: ExecutionContext
 ) {
-  operatorURI = resolveOperatorURI(operatorURI);
+  const { operatorURI, params } = resolveOperatorURIWithMethod(uri, ctx.params);
+  ctx.params = params;
   const { operator, isRemote } = getLocalOrRemoteOperator(operatorURI);
   const currentContext = ctx._currentContext;
 
   let result;
   let error;
+  let errorMessage;
   let executor;
   let delegated = false;
 
@@ -551,6 +693,7 @@ export async function executeOperatorWithContext(
         result = serverResult.result;
         delegated = serverResult.delegated;
         error = serverResult.error;
+        errorMessage = serverResult.error_message;
       } catch (e) {
         const isAbortError =
           e.name === "AbortError" || e instanceof DOMException;
@@ -558,6 +701,7 @@ export async function executeOperatorWithContext(
           error = e;
           console.error(`Error executing operator ${operatorURI}:`);
           console.error(error);
+          errorMessage = error.message;
         }
       }
     } else {
@@ -565,24 +709,30 @@ export async function executeOperatorWithContext(
         "POST",
         "/operators/execute",
         {
+          current_sample: currentContext.currentSample,
+          dataset_name: currentContext.datasetName,
+          delegation_target: currentContext.delegationTarget,
+          extended: currentContext.extended,
+          extended_selection: currentContext.extendedSelection,
+          filters: currentContext.filters,
           operator_uri: operatorURI,
           params: ctx.params,
-          dataset_name: currentContext.datasetName,
-          extended: currentContext.extended,
-          view: currentContext.view,
-          filters: currentContext.filters,
+          request_delegation: ctx.requestDelegation,
           selected: currentContext.selectedSamples
             ? Array.from(currentContext.selectedSamples)
             : [],
           selected_labels: formatSelectedLabels(currentContext.selectedLabels),
-          current_sample: currentContext.currentSample,
-          delegation_target: ctx.delegationTarget,
-          request_delegation: ctx.requestDelegation,
+          view: currentContext.view,
           view_name: currentContext.viewName,
+          group_slice: currentContext.groupSlice,
+          query_performance: currentContext.queryPerformance,
+          spaces: currentContext.spaces,
+          workspace_name: currentContext.workspaceName,
         }
       );
       result = serverResult.result;
       error = serverResult.error;
+      errorMessage = serverResult.error_message;
       executor = serverResult.executor;
       delegated = serverResult.delegated;
     }
@@ -617,8 +767,39 @@ export async function executeOperatorWithContext(
 
   if (executor) executor.queueRequests();
 
-  return new OperatorResult(operator, result, executor, error, delegated);
+  trackOperatorExecution(operatorURI, params, {
+    info: ctx._currentContext.info,
+    delegated,
+    isRemote,
+    error,
+  });
+
+  return new OperatorResult(
+    operator,
+    result,
+    executor,
+    error,
+    delegated,
+    errorMessage
+  );
 }
+
+type CurrentContext = {
+  datasetName: string;
+  view: any;
+  extended: any;
+  filters: any;
+  selectedSamples: Set<string>;
+  selectedLabels: any;
+  currentSample: string;
+  viewName: string;
+  extendedSelection: {
+    selection: string[] | null;
+    scope: string;
+  };
+  state: any;
+  delegationTarget?: string;
+};
 
 export async function resolveRemoteType(
   operatorURI,
@@ -626,26 +807,33 @@ export async function resolveRemoteType(
   target: "inputs" | "outputs",
   results: OperatorResult = null
 ) {
+  operatorURI = resolveOperatorURI(operatorURI);
   const currentContext = ctx._currentContext;
   const typeAsJSON = await getFetchFunction()(
     "POST",
     "/operators/resolve-type",
     {
-      operator_uri: operatorURI,
-      target,
-      params: ctx.params,
+      current_sample: currentContext.currentSample,
       dataset_name: currentContext.datasetName,
+      delegation_target: currentContext.delegationTarget,
       extended: currentContext.extended,
-      view: currentContext.view,
+      extended_selection: currentContext.extendedSelection,
       filters: currentContext.filters,
+      operator_uri: operatorURI,
+      params: ctx.params,
+      request_delegation: ctx.requestDelegation,
+      results: results ? results.result : null,
+      target,
       selected: currentContext.selectedSamples
         ? Array.from(currentContext.selectedSamples)
         : [],
       selected_labels: formatSelectedLabels(currentContext.selectedLabels),
-      results: results ? results.result : null,
-      delegated: results ? results.delegated : null,
-      current_sample: currentContext.currentSample,
+      view: currentContext.view,
       view_name: currentContext.viewName,
+      group_slice: currentContext.groupSlice,
+      query_performance: currentContext.queryPerformance,
+      spaces: currentContext.spaces,
+      workspace_name: currentContext.workspaceName,
     }
   );
 
@@ -698,22 +886,31 @@ export async function resolveExecutionOptions(
   operatorURI,
   ctx: ExecutionContext
 ) {
+  operatorURI = resolveOperatorURI(operatorURI);
   const currentContext = ctx._currentContext;
   const executionOptionsAsJSON = await getFetchFunction()(
     "POST",
     "/operators/resolve-execution-options",
     {
+      current_sample: currentContext.currentSample,
+      dataset_name: currentContext.datasetName,
+      delegation_target: currentContext.delegationTarget,
+      extended: currentContext.extended,
+      extended_selection: currentContext.extendedSelection,
+      filters: currentContext.filters,
       operator_uri: operatorURI,
       params: ctx.params,
-      dataset_name: currentContext.datasetName,
-      extended: currentContext.extended,
-      view: currentContext.view,
-      filters: currentContext.filters,
+      request_delegation: ctx.requestDelegation,
       selected: currentContext.selectedSamples
         ? Array.from(currentContext.selectedSamples)
         : [],
       selected_labels: formatSelectedLabels(currentContext.selectedLabels),
+      view: currentContext.view,
       view_name: currentContext.viewName,
+      group_slice: currentContext.groupSlice,
+      query_performance: currentContext.queryPerformance,
+      spaces: currentContext.spaces,
+      workspace_name: currentContext.workspaceName,
     }
   );
 
@@ -735,6 +932,7 @@ export async function fetchRemotePlacements(ctx: ExecutionContext) {
     {
       dataset_name: currentContext.datasetName,
       extended: currentContext.extended,
+      extended_selection: currentContext.extendedSelection,
       view: currentContext.view,
       filters: currentContext.filters,
       selected: currentContext.selectedSamples
@@ -743,6 +941,10 @@ export async function fetchRemotePlacements(ctx: ExecutionContext) {
       selected_labels: formatSelectedLabels(currentContext.selectedLabels),
       current_sample: currentContext.currentSample,
       view_name: currentContext.viewName,
+      group_slice: currentContext.groupSlice,
+      query_performance: currentContext.queryPerformance,
+      spaces: currentContext.spaces,
+      workspace_name: currentContext.workspaceName,
     }
   );
   if (result && result.error) {
@@ -769,16 +971,6 @@ export async function resolveLocalPlacements(ctx: ExecutionContext) {
   }
 
   return localPlacements;
-}
-
-// and allows for the execution of the requests in order of arrival
-// and removing the requests that have been completed
-
-enum QueueItemStatus {
-  Pending,
-  Executing,
-  Completed,
-  Failed,
 }
 
 class QueueItem {
@@ -831,8 +1023,8 @@ export class InvocationRequestQueue {
   generateId() {
     return Math.random().toString(36).substr(2, 9);
   }
-  add(request: InvocationRequest) {
-    const item = new QueueItem(this.generateId(), request);
+  add(request: InvocationRequest, callback?: ExecutionCallback) {
+    const item = new QueueItem(this.generateId(), request, callback);
     this._queue.push(item);
     this._notifySubscribers();
   }

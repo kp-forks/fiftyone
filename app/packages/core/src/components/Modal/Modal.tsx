@@ -1,25 +1,18 @@
-import { ErrorBoundary, HelpPanel, JSONPanel } from "@fiftyone/components";
+import { HelpPanel, JSONPanel } from "@fiftyone/components";
 import { OPERATOR_PROMPT_AREAS, OperatorPromptArea } from "@fiftyone/operators";
 import * as fos from "@fiftyone/state";
-import { Controller } from "@react-spring/core";
-import React, {
-  Fragment,
-  Suspense,
-  useCallback,
-  useEffect,
-  useRef,
-} from "react";
+import React, { useCallback, useMemo, useRef } from "react";
 import ReactDOM from "react-dom";
-import { useRecoilState, useRecoilValue, useSetRecoilState } from "recoil";
+import { useRecoilCallback, useRecoilValue } from "recoil";
 import styled from "styled-components";
-import Sidebar, { Entries } from "../Sidebar";
-import Group from "./Group";
-import { GroupContextProvider } from "./Group/GroupContextProvider";
+import { ModalActionsRow } from "../Actions";
+import Sidebar from "../Sidebar";
 import ModalNavigation from "./ModalNavigation";
-import Sample from "./Sample";
-import { Sample3d } from "./Sample3d";
+import { ModalSpace } from "./ModalSpace";
 import { TooltipInfo } from "./TooltipInfo";
-import { usePanels } from "./hooks";
+import { useLookerHelpers, useTooltipEventHandler } from "./hooks";
+import { modalContext } from "./modal-context";
+import { useModalSidebarRenderEntry } from "./use-sidebar-render-entry";
 
 const ModalWrapper = styled.div`
   position: fixed;
@@ -34,7 +27,7 @@ const ModalWrapper = styled.div`
   background-color: ${({ theme }) => theme.neutral.softBg};
 `;
 
-const Container = styled.div`
+const ModalContainer = styled.div`
   background-color: ${({ theme }) => theme.background.level2};
   border: 1px solid ${({ theme }) => theme.primary.plainBorder};
   position: relative;
@@ -42,260 +35,219 @@ const Container = styled.div`
   justify-content: center;
   overflow: hidden;
   box-shadow: 0 20px 25px -20px #000;
+  z-index: 10001;
 `;
 
-const ContentColumn = styled.div`
-  flex-grow: 1;
-  width: 1px;
+const SpacesContainer = styled.div`
+  width: 100%;
   height: 100%;
-  position: relative;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+  z-index: 1501;
 `;
 
-const SampleModal = () => {
-  const lookerRef = useRef<fos.Lookers>();
+const SidebarPanelBlendInDiv = styled.div`
+  height: 2em;
+  background-color: #262626;
+  width: 100%;
+  margin-bottom: 1px;
+  flex-shrink: 0;
+`;
+
+const SidebarContainer = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+`;
+
+const Modal = () => {
   const wrapperRef = useRef<HTMLDivElement>(null);
 
-  const disabled = useRecoilValue(fos.disabledPaths);
-  const labelPaths = useRecoilValue(fos.labelPaths({ expanded: false }));
-
-  const mode = useRecoilValue(fos.groupStatistics(true));
-  const screen = useRecoilValue(fos.fullscreen)
-    ? { width: "100%", height: "100%" }
-    : { width: "95%", height: "90%", borderRadius: "3px" };
-  const isGroup = useRecoilValue(fos.isGroup);
-  const isPcd = useRecoilValue(fos.isPointcloudDataset);
-  const is3D = useRecoilValue(fos.is3DDataset);
   const clearModal = fos.useClearModal();
-  const { jsonPanel, helpPanel, onNavigate } = usePanels();
-  const tooltip = fos.useTooltip();
-  const [isTooltipLocked, setIsTooltipLocked] = useRecoilState(
-    fos.isTooltipLocked
-  );
-  const setTooltipDetail = useSetRecoilState(fos.tooltipDetail);
 
-  const tooltipEventHandler = useCallback(
-    (e) => {
-      if (e.detail) {
-        setTooltipDetail(e.detail);
-        if (!isTooltipLocked && e.detail?.coordinates) {
-          tooltip.setCoords(e.detail.coordinates);
-        }
-      } else if (!isTooltipLocked) {
-        setTooltipDetail(null);
+  const onClickModalWrapper = useCallback(
+    (e: React.MouseEvent) => {
+      if (e.target === wrapperRef.current) {
+        clearModal();
       }
     },
-    [isTooltipLocked, tooltip]
+    [clearModal]
   );
 
-  useEffect(() => {
-    // reset tooltip state when modal is closed
-    setIsTooltipLocked(false);
+  const renderEntry = useModalSidebarRenderEntry();
 
-    return () => {
-      setTooltipDetail(null);
-    };
-  }, []);
+  const { jsonPanel, helpPanel } = useLookerHelpers();
 
-  /**
-   * a bit hacky, this is using the callback-ref pattern to get looker reference so that event handler can be registered
-   * note: cannot use `useEventHandler()` hook since there's no direct reference to looker in Modal
-   */
-  const lookerRefCallback = useCallback(
+  const select = fos.useSelectSample();
+
+  const modalCloseHandler = useRecoilCallback(
+    ({ snapshot, set }) =>
+      async () => {
+        const isTooltipCurrentlyLocked = await snapshot.getPromise(
+          fos.isTooltipLocked
+        );
+        if (isTooltipCurrentlyLocked) {
+          set(fos.isTooltipLocked, false);
+          return;
+        }
+
+        jsonPanel.close();
+        helpPanel.close();
+
+        const isFullScreen = await snapshot.getPromise(fos.fullscreen);
+
+        if (isFullScreen) {
+          set(fos.fullscreen, false);
+          return;
+        }
+
+        clearModal();
+        activeLookerRef.current?.removeEventListener(
+          "close",
+          modalCloseHandler
+        );
+      },
+    [clearModal, jsonPanel, helpPanel]
+  );
+
+  const keysHandler = useRecoilCallback(
+    ({ snapshot, set }) =>
+      async (e: KeyboardEvent) => {
+        const active = document.activeElement;
+        if (active?.tagName === "INPUT") {
+          if ((active as HTMLInputElement).type === "text") {
+            return;
+          }
+        }
+
+        if (e.altKey && e.code === "Space") {
+          const hoveringSampleId = (
+            await snapshot.getPromise(fos.hoveredSample)
+          )?._id;
+          if (hoveringSampleId) {
+            select(hoveringSampleId);
+          } else {
+            const modalSampleId = await snapshot.getPromise(fos.modalSampleId);
+            if (modalSampleId) {
+              select(modalSampleId);
+            }
+          }
+        } else if (e.key === "s") {
+          set(fos.sidebarVisible(true), (prev) => !prev);
+        } else if (e.key === "f") {
+          set(fos.fullscreen, (prev) => !prev);
+        } else if (e.key === "x") {
+          const current = await snapshot.getPromise(fos.modalSelector);
+          set(fos.selectedSamples, (selected) => {
+            const newSelected = new Set([...Array.from(selected)]);
+            if (current?.id) {
+              if (newSelected.has(current.id)) {
+                newSelected.delete(current.id);
+              } else {
+                newSelected.add(current.id);
+              }
+            }
+
+            return newSelected;
+          });
+        } else if (e.key === "Escape") {
+          if (activeLookerRef.current) {
+            // we handle close logic in modal + other places
+            return;
+          }
+
+          await modalCloseHandler();
+        }
+      },
+    []
+  );
+
+  fos.useEventHandler(document, "keyup", keysHandler);
+
+  const isFullScreen = useRecoilValue(fos.fullscreen);
+
+  const { closePanels } = useLookerHelpers();
+
+  const screenParams = useMemo(() => {
+    return isFullScreen
+      ? { width: "100%", height: "100%" }
+      : { width: "95%", height: "calc(100% - 70px)", borderRadius: "8px" };
+  }, [isFullScreen]);
+
+  const activeLookerRef = useRef<fos.Lookers>();
+
+  const addTooltipEventHandler = useTooltipEventHandler();
+  const removeTooltipEventHanlderRef = useRef<ReturnType<
+    typeof addTooltipEventHandler
+  > | null>(null);
+
+  const onLookerSet = useCallback(
     (looker: fos.Lookers) => {
-      lookerRef.current = looker;
-      looker.addEventListener("tooltip", tooltipEventHandler);
+      looker.addEventListener("close", modalCloseHandler);
+
+      // remove previous event listener
+      removeTooltipEventHanlderRef.current?.();
+      removeTooltipEventHanlderRef.current = addTooltipEventHandler(looker);
     },
-    [tooltipEventHandler]
+    [modalCloseHandler, addTooltipEventHandler]
   );
 
-  const renderEntry = useCallback(
-    (
-      key: string,
-      group: string,
-      entry: fos.SidebarEntry,
-      controller: Controller,
-      trigger: (
-        event: React.MouseEvent<HTMLDivElement>,
-        key: string,
-        cb: () => void
-      ) => void
-    ) => {
-      switch (entry.kind) {
-        case fos.EntryKind.PATH: {
-          const isTag = entry.path === "tags";
-          const isLabelTag = entry.path === "_label_tags";
-          const isLabel = labelPaths.includes(entry.path);
-          const isOther = disabled.has(entry.path);
-          const isFieldPrimitive =
-            !isLabelTag && !isLabel && !isOther && !(isTag && mode === "group");
-
-          return {
-            children: (
-              <>
-                {(isLabel ||
-                  isOther ||
-                  isLabelTag ||
-                  (isTag && mode === "group")) && (
-                  <Entries.FilterablePath
-                    entryKey={key}
-                    modal={true}
-                    path={entry.path}
-                    group={group}
-                    onFocus={() => {
-                      controller.set({ zIndex: "1" });
-                    }}
-                    onBlur={() => {
-                      controller.set({ zIndex: "0" });
-                    }}
-                    disabled={isOther}
-                    key={key}
-                    trigger={trigger}
-                  />
-                )}
-                {isFieldPrimitive && (
-                  <Entries.PathValue
-                    entryKey={key}
-                    key={key}
-                    path={entry.path}
-                    trigger={trigger}
-                  />
-                )}
-              </>
-            ),
-            disabled: isTag || isOther,
-          };
-        }
-        case fos.EntryKind.GROUP: {
-          return {
-            children: (
-              <Entries.PathGroup
-                entryKey={key}
-                name={entry.name}
-                modal={true}
-                key={key}
-                trigger={trigger}
-              />
-            ),
-            disabled: false,
-          };
-        }
-        case fos.EntryKind.EMPTY:
-          return {
-            children: (
-              <Entries.Empty
-                useText={() => ({ text: "No fields", loading: false })}
-                key={key}
-              />
-            ),
-            disabled: true,
-          };
-        case fos.EntryKind.INPUT:
-          return {
-            children: <Entries.Filter modal={true} key={key} />,
-            disabled: true,
-          };
-        default:
-          throw new Error("invalid entry");
-      }
+  const setActiveLookerRef = useCallback(
+    (looker: fos.Lookers) => {
+      activeLookerRef.current = looker;
+      onLookerSet(looker);
     },
-    [disabled, labelPaths, mode]
+    [onLookerSet]
   );
-
-  useEffect(() => {
-    return () => {
-      lookerRef.current &&
-        lookerRef.current.removeEventListener("tooltip", tooltipEventHandler);
-    };
-  }, [tooltipEventHandler]);
-
-  const isNestedDynamicGroup = useRecoilValue(fos.isNestedDynamicGroup);
-  const isOrderedDynamicGroup = useRecoilValue(fos.isOrderedDynamicGroup);
-  const isLooker3DVisible = useRecoilValue(fos.groupMedia3dVisibleSetting);
-  const isCarouselVisible = useRecoilValue(
-    fos.groupMediaIsCarouselVisibleSetting
-  );
-
-  const [dynamicGroupsViewMode, setDynamicGroupsViewMode] = useRecoilState(
-    fos.dynamicGroupsViewMode
-  );
-  const setIsMainLookerVisible = useSetRecoilState(
-    fos.groupMediaIsMainVisibleSetting
-  );
-
-  useEffect(() => {
-    // if it is unordered nested dynamic group and mode is not pagination, set to pagination
-    if (
-      isNestedDynamicGroup &&
-      !isOrderedDynamicGroup &&
-      dynamicGroupsViewMode !== "pagination"
-    ) {
-      setDynamicGroupsViewMode("pagination");
-    }
-
-    // hide 3d looker and carousel if `hasGroupSlices`
-    if (
-      dynamicGroupsViewMode === "video" &&
-      (isLooker3DVisible || isCarouselVisible)
-    ) {
-      setIsMainLookerVisible(true);
-    }
-  }, [
-    dynamicGroupsViewMode,
-    isNestedDynamicGroup,
-    isOrderedDynamicGroup,
-    isLooker3DVisible,
-    isCarouselVisible,
-  ]);
 
   return ReactDOM.createPortal(
-    <Fragment>
+    <modalContext.Provider
+      value={{
+        activeLookerRef,
+        setActiveLookerRef,
+      }}
+    >
       <ModalWrapper
         ref={wrapperRef}
-        onClick={(event) => event.target === wrapperRef.current && clearModal()}
+        onClick={onClickModalWrapper}
+        data-cy="modal"
       >
-        <Container style={{ ...screen, zIndex: 10001 }} data-cy="modal">
+        <ModalActionsRow />
+        <TooltipInfo />
+        <ModalContainer style={{ ...screenParams }}>
           <OperatorPromptArea area={OPERATOR_PROMPT_AREAS.DRAWER_LEFT} />
-          <TooltipInfo />
-          <ContentColumn>
-            <ModalNavigation onNavigate={onNavigate} />
-            <ErrorBoundary onReset={() => {}}>
-              <Suspense>
-                {isGroup ? (
-                  <GroupContextProvider lookerRefCallback={lookerRefCallback}>
-                    <Group />
-                  </GroupContextProvider>
-                ) : isPcd || is3D ? (
-                  <Sample3d />
-                ) : (
-                  <Sample lookerRefCallback={lookerRefCallback} />
-                )}
-                {jsonPanel.isOpen && (
-                  <JSONPanel
-                    containerRef={jsonPanel.containerRef}
-                    onClose={() => jsonPanel.close()}
-                    onCopy={() => jsonPanel.copy()}
-                    json={jsonPanel.json}
-                  />
-                )}
-                {helpPanel.isOpen && (
-                  <HelpPanel
-                    containerRef={helpPanel.containerRef}
-                    onClose={() => helpPanel.close()}
-                    items={helpPanel.items}
-                  />
-                )}
-              </Suspense>
-            </ErrorBoundary>
-          </ContentColumn>
-          <Sidebar render={renderEntry} modal={true} />
+          <ModalNavigation closePanels={closePanels} />
+          <SpacesContainer>
+            <ModalSpace />
+          </SpacesContainer>
+          <SidebarContainer>
+            <SidebarPanelBlendInDiv />
+            <Sidebar render={renderEntry} modal={true} />
+          </SidebarContainer>
           <OperatorPromptArea area={OPERATOR_PROMPT_AREAS.DRAWER_RIGHT} />
-        </Container>
+
+          {jsonPanel.isOpen && (
+            <JSONPanel
+              containerRef={jsonPanel.containerRef}
+              onClose={() => jsonPanel.close()}
+              onCopy={() => jsonPanel.copy()}
+              json={jsonPanel.json}
+            />
+          )}
+          {helpPanel.isOpen && (
+            <HelpPanel
+              containerRef={helpPanel.containerRef}
+              onClose={() => helpPanel.close()}
+              items={helpPanel.items}
+            />
+          )}
+        </ModalContainer>
       </ModalWrapper>
-    </Fragment>,
+    </modalContext.Provider>,
     document.getElementById("modal") as HTMLDivElement
   );
 };
 
-export default React.memo(SampleModal);
+export default React.memo(Modal);

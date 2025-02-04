@@ -14,9 +14,9 @@ FiftyOne
         </a>
       </th>
       <th>
-        <a target="_blank" href="https://slack.voxel51.com">
-          <img alt="Slack community" src="_static/images/icons/slack-logo-256px.png">
-          &nbsp Join us on Slack
+        <a target="_blank" href="https://community.voxel51.com/">
+          <img alt="Discord community" src="_static/images/icons/discord-logo-256px.png">
+          &nbsp Join us on Discord
         </a>
       </th>
       <th>
@@ -122,6 +122,11 @@ learn how:
     :image_title: MongoDB
 
 .. customimagelink::
+    :image_link: integrations/elasticsearch.html
+    :image_src: https://voxel51.com/images/integrations/elasticsearch-128.png
+    :image_title: Elasticsearch
+
+.. customimagelink::
     :image_link: integrations/milvus.html
     :image_src: https://voxel51.com/images/integrations/milvus-128.png
     :image_title: Milvus
@@ -175,6 +180,11 @@ learn how:
     :image_link: integrations/v7.html
     :image_src: https://voxel51.com/images/integrations/v7-128.png
     :image_title: V7
+
+.. customimagelink::
+    :image_link: https://github.com/segments-ai/segments-voxel51-plugin
+    :image_src: https://voxel51.com/images/integrations/segments-128.png
+    :image_title: Segments
 
 .. customimagelink::
     :image_link: integrations/labelbox.html
@@ -346,7 +356,7 @@ models.
 
 .. custombutton::
     :button_text: Learn more about the Brain
-    :button_link: user_guide/brain.html
+    :button_link: brain.html
 
 .. code-block:: python
    :linenos:
@@ -364,8 +374,11 @@ customizing the functionality of the tool to suit your specific needs.
 
 With plugins, you can add new functionality to the FiftyOne App, create
 integrations with other tools and APIs, render custom panels, and add custom
-buttons to menus. You can even schedule long running tasks from within the App
-that execute on a connected workflow orchestration tool like Apache Airflow.
+buttons to menus.
+
+With :ref:`FiftyOne Teams <teams-delegated-operations>`, you can even write
+plugins that allow users to execute long-running tasks from within the App that
+run on a connected compute cluster.
 
 .. custombutton::
     :button_text: Install some plugins!
@@ -374,6 +387,71 @@ that execute on a connected workflow orchestration tool like Apache Airflow.
 .. image:: images/plugins/operators/examples/embeddings.gif
    :alt: fiftyone-plugins
    :align: center
+
+Dataset Zoo
+-----------
+
+The FiftyOne Dataset Zoo provides a powerful interface for downloading datasets
+and loading them into FiftyOne.
+
+It provides native access to dozens of popular benchmark datasets, and it als
+supports downloading arbitrary public or private datasets whose
+download/preparation methods are provided via GitHub repositories or URLs.
+
+.. custombutton::
+    :button_text: Check out the Dataset Zoo
+    :button_link: dataset_zoo/index.html
+
+.. code-block:: python
+   :linenos:
+
+    import fiftyone as fo
+    import fiftyone.zoo as foz
+
+    dataset = foz.load_zoo_dataset("coco-2017", split="validation")
+
+    session = fo.launch_app(dataset)
+
+.. image:: images/dataset_zoo_coco_2017.png
+   :alt: dataset-zoo
+   :align: center
+
+Model Zoo
+---------
+
+The FiftyOne Model Zoo provides a powerful interface for downloading models and
+applying them to your FiftyOne datasets.
+
+It provides native access to hundreds of pre-trained models, and it also
+supports downloading arbitrary public or private models whose definitions are
+provided via GitHub repositories or URLs.
+
+.. custombutton::
+    :button_text: Check out the Model Zoo
+    :button_link: model_zoo/index.html
+
+.. code-block:: python
+   :linenos:
+
+    import fiftyone as fo
+    import fiftyone.zoo as foz
+
+    dataset = foz.load_zoo_dataset(
+        "coco-2017",
+        split="validation",
+        max_samples=50,
+        shuffle=True,
+    )
+
+    model = foz.load_zoo_model(
+        "clip-vit-base32-torch",
+        text_prompt="A photo of a",
+        classes=["person", "dog", "cat", "bird", "car", "tree", "chair"],
+    )
+
+    dataset.apply_model(model, label_field="zero_shot_predictions")
+
+    session = fo.launch_app(dataset)
 
 What's Next?
 ____________
@@ -394,7 +472,7 @@ Need Support?
 _____________
 
 If you run into any issues with FiftyOne or have any burning questions, feel
-free to `connect with us on Slack <https://slack.voxel51.com>`_ or reach out to
+free to `connect with us on Discord <https://community.voxel51.com>`_ or reach out to
 us at support@voxel51.com.
 
 .. toctree::
@@ -402,16 +480,20 @@ us at support@voxel51.com.
    :hidden:
 
    Overview <self>
+   FiftyOne Teams 🚀 <teams/index>
    Installation <getting_started/install>
    Environments <environments/index>
    Tutorials <tutorials/index>
    Recipes <recipes/index>
    Cheat Sheets <cheat_sheets/index>
    User Guide <user_guide/index>
-   FiftyOne Teams <teams/index>
+   Dataset Zoo <dataset_zoo/index>
+   Model Zoo <model_zoo/index>
+   FiftyOne Brain <brain>
    Integrations <integrations/index>
    Plugins <plugins/index>
    CLI <cli/index>
    API Reference <api/fiftyone>
    Release Notes <release-notes>
+   Deprecation Notices <deprecation>
    FAQ <faq/index>

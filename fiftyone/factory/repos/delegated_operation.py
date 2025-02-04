@@ -1,10 +1,11 @@
 """
 FiftyOne delegated operation repository.
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
+
 import logging
 from datetime import datetime
 from typing import Any, List
@@ -14,6 +15,7 @@ from bson import ObjectId
 from pymongo import IndexModel
 from pymongo.collection import Collection
 
+from fiftyone.internal.util import is_remote_service
 from fiftyone.factory import DelegatedOperationPagingParams
 from fiftyone.factory.repos import DelegatedOperationDocument
 from fiftyone.operators.executor import (
@@ -42,7 +44,9 @@ class DelegatedOperationRepo(object):
         run_state: ExecutionRunState,
         result: ExecutionResult = None,
         run_link: str = None,
+        log_path: str = None,
         progress: ExecutionProgress = None,
+        required_state: ExecutionRunState = None,
     ) -> DelegatedOperationDocument:
         """Update the run state of an operation."""
         raise NotImplementedError("subclass must implement update_run_state()")
@@ -61,6 +65,22 @@ class DelegatedOperationRepo(object):
         """Get all queued operations."""
         raise NotImplementedError(
             "subclass must implement get_queued_operations()"
+        )
+
+    def get_scheduled_operations(
+        self, operator: str = None, dataset_name=None
+    ) -> List[DelegatedOperationDocument]:
+        """Get all scheduled operations."""
+        raise NotImplementedError(
+            "subclass must implement get_scheduled_operations()"
+        )
+
+    def get_running_operations(
+        self, operator: str = None, dataset_name=None
+    ) -> List[DelegatedOperationDocument]:
+        """Get all running operations."""
+        raise NotImplementedError(
+            "subclass must implement get_running_operations()"
         )
 
     def list_operations(
@@ -98,6 +118,14 @@ class DelegatedOperationRepo(object):
         """Sets the label for the delegated operation."""
         raise NotImplementedError("subclass must implement set_label()")
 
+    def set_log_upload_error(
+        self, _id: ObjectId, log_upload_error: str
+    ) -> DelegatedOperationDocument:
+        """Sets the log upload error for the delegated operation."""
+        raise NotImplementedError(
+            "subclass must implement set_log_upload_error()"
+        )
+
     def get(self, _id: ObjectId) -> DelegatedOperationDocument:
         """Get an operation by id."""
         raise NotImplementedError("subclass must implement get()")
@@ -116,7 +144,7 @@ class MongoDelegatedOperationRepo(DelegatedOperationRepo):
         self._collection = (
             collection if collection is not None else self._get_collection()
         )
-
+        self.is_remote = is_remote_service()
         self._create_indexes()
 
     def _get_collection(self) -> Collection:
@@ -148,20 +176,32 @@ class MongoDelegatedOperationRepo(DelegatedOperationRepo):
                 )
             )
 
+        if "dataset_id_1" not in index_names:
+            indices_to_create.append(
+                IndexModel(
+                    [("dataset_id", pymongo.ASCENDING)], name="dataset_id_1"
+                )
+            )
+
         if indices_to_create:
             self._collection.create_indexes(indices_to_create)
 
     def queue_operation(self, **kwargs: Any) -> DelegatedOperationDocument:
-        op = DelegatedOperationDocument()
+        op = DelegatedOperationDocument(is_remote=self.is_remote)
         for prop in self.required_props:
             if prop not in kwargs:
                 raise ValueError("Missing required property '%s'" % prop)
             setattr(op, prop, kwargs.get(prop))
 
-        # also set the delegation target (not required)
         delegation_target = kwargs.get("delegation_target", None)
         if delegation_target:
             setattr(op, "delegation_target", delegation_target)
+
+        metadata = kwargs.get("metadata", None)
+        if metadata:
+            setattr(op, "metadata", metadata)
+        else:
+            setattr(op, "metadata", {})
 
         context = None
         if isinstance(op.context, dict):
@@ -190,6 +230,7 @@ class MongoDelegatedOperationRepo(DelegatedOperationRepo):
             context.request_params["dataset_id"] = str(op.dataset_id)
             context.request_params["dataset_name"] = context.dataset.name
 
+        op.context = context
         doc = self._collection.insert_one(op.to_pymongo())
         op.id = doc.inserted_id
         return DelegatedOperationDocument().from_pymongo(op.__dict__)
@@ -214,13 +255,25 @@ class MongoDelegatedOperationRepo(DelegatedOperationRepo):
         )
         return DelegatedOperationDocument().from_pymongo(doc)
 
+    def set_log_upload_error(
+        self, _id: ObjectId, log_upload_error: str
+    ) -> DelegatedOperationDocument:
+        doc = self._collection.find_one_and_update(
+            filter={"_id": _id},
+            update={"$set": {"log_upload_error": log_upload_error}},
+            return_document=pymongo.ReturnDocument.AFTER,
+        )
+        return DelegatedOperationDocument().from_pymongo(doc)
+
     def update_run_state(
         self,
         _id: ObjectId,
         run_state: ExecutionRunState,
         result: ExecutionResult = None,
         run_link: str = None,
+        log_path: str = None,
         progress: ExecutionProgress = None,
+        required_state: ExecutionRunState = None,
     ) -> DelegatedOperationDocument:
         update = None
 
@@ -228,26 +281,37 @@ class MongoDelegatedOperationRepo(DelegatedOperationRepo):
         if result is not None and not isinstance(result, ExecutionResult):
             execution_result = ExecutionResult(result=result)
 
+        execution_result_json = (
+            execution_result.to_json() if execution_result else None
+        )
+        outputs_schema = (
+            execution_result_json.pop("outputs_schema", None)
+            if execution_result_json
+            else None
+        )
+
         if run_state == ExecutionRunState.COMPLETED:
             update = {
                 "$set": {
                     "run_state": run_state,
                     "completed_at": datetime.utcnow(),
                     "updated_at": datetime.utcnow(),
-                    "result": execution_result.to_json()
-                    if execution_result
-                    else None,
+                    "result": execution_result_json,
                 }
             }
+
+            if outputs_schema:
+                update["$set"]["metadata.outputs_schema"] = (
+                    outputs_schema or {}
+                )
+
         elif run_state == ExecutionRunState.FAILED:
             update = {
                 "$set": {
                     "run_state": run_state,
                     "failed_at": datetime.utcnow(),
                     "updated_at": datetime.utcnow(),
-                    "result": execution_result.to_json()
-                    if execution_result
-                    else None,
+                    "result": execution_result_json,
                 }
             }
         elif run_state == ExecutionRunState.RUNNING:
@@ -258,9 +322,28 @@ class MongoDelegatedOperationRepo(DelegatedOperationRepo):
                     "updated_at": datetime.utcnow(),
                 }
             }
+        elif run_state == ExecutionRunState.SCHEDULED:
+            update = {
+                "$set": {
+                    "run_state": run_state,
+                    "scheduled_at": datetime.utcnow(),
+                    "updated_at": datetime.utcnow(),
+                }
+            }
+        elif run_state == ExecutionRunState.QUEUED:
+            update = {
+                "$set": {
+                    "run_state": run_state,
+                    "queued_at": datetime.utcnow(),
+                    "updated_at": datetime.utcnow(),
+                }
+            }
 
         if run_link is not None:
             update["$set"]["run_link"] = run_link
+
+        if log_path is not None:
+            update["$set"]["log_path"] = log_path
 
         if update is None:
             raise ValueError("Invalid run_state: {}".format(run_state))
@@ -269,13 +352,21 @@ class MongoDelegatedOperationRepo(DelegatedOperationRepo):
             update["$set"]["status"] = progress
             update["$set"]["status"]["updated_at"] = datetime.utcnow()
 
+        collection_filter = {"_id": _id}
+        if required_state is not None:
+            collection_filter["run_state"] = required_state
+
         doc = self._collection.find_one_and_update(
-            filter={"_id": _id},
+            filter=collection_filter,
             update=update,
             return_document=pymongo.ReturnDocument.AFTER,
         )
 
-        return DelegatedOperationDocument().from_pymongo(doc)
+        return (
+            DelegatedOperationDocument().from_pymongo(doc)
+            if doc is not None
+            else None
+        )
 
     def update_progress(
         self,
@@ -322,6 +413,28 @@ class MongoDelegatedOperationRepo(DelegatedOperationRepo):
             operator=operator,
             dataset_name=dataset_name,
             run_state=ExecutionRunState.QUEUED,
+        )
+
+    def get_scheduled_operations(
+        self,
+        operator: str = None,
+        dataset_name: ObjectId = None,
+    ) -> List[DelegatedOperationDocument]:
+        return self.list_operations(
+            operator=operator,
+            dataset_name=dataset_name,
+            run_state=ExecutionRunState.SCHEDULED,
+        )
+
+    def get_running_operations(
+        self,
+        operator: str = None,
+        dataset_name: ObjectId = None,
+    ) -> List[DelegatedOperationDocument]:
+        return self.list_operations(
+            operator=operator,
+            dataset_name=dataset_name,
+            run_state=ExecutionRunState.RUNNING,
         )
 
     def list_operations(

@@ -7,6 +7,7 @@ import { initializationErrors } from "./operators";
 import { useOperatorBrowser } from "./state";
 
 // todo: use plugin component
+import { useTrackEvent } from "@fiftyone/analytics";
 import { useEffect, useRef } from "react";
 import ErrorView from "../../core/src/plugins/SchemaIO/components/ErrorView";
 import OperatorIcon, { CustomIconPropsType } from "./OperatorIcon";
@@ -20,7 +21,7 @@ const QueryInput = styled.input`
   border: none;
   padding: 0.5rem 1rem;
 `;
-const ChoiceContainer = styled.div<{ disabled: boolean; selected?: boolean }>`
+const ChoiceContainer = styled.div<{ $disabled: boolean; $selected?: boolean }>`
   display: flex;
   height: 2.5rem;
   line-height: 2.5rem;
@@ -29,8 +30,9 @@ const ChoiceContainer = styled.div<{ disabled: boolean; selected?: boolean }>`
     background: ${({ theme }) => theme.background.level1};
     cursor: pointer;
   }
-  opacity: ${({ disabled }) => (disabled ? 0.5 : 1)};
-  background: ${({ selected, theme }) => selected && theme.primary.plainColor};
+  opacity: ${({ $disabled }) => ($disabled ? 0.5 : 1)};
+  background: ${({ $selected, theme }) =>
+    $selected && theme.primary.plainColor};
 `;
 
 const ChoiceDescription = styled.div`
@@ -68,9 +70,9 @@ const Choice = (props: ChoicePropsType) => {
 
   return (
     <ChoiceContainer
-      disabled={disabled}
+      $disabled={disabled}
       onClick={onClick}
-      selected={selected}
+      $selected={selected}
       ref={containerRef}
     >
       <ChoiceIcon>
@@ -125,6 +127,14 @@ export default function OperatorBrowser() {
   const browser = useOperatorBrowser();
   const queryInputRef = useRef();
 
+  const trackEvent = useTrackEvent();
+
+  useEffect(() => {
+    if (browser.isVisible) {
+      trackEvent("open_operator_browser");
+    }
+  }, [trackEvent, browser.isVisible]);
+
   useEffect(() => {
     const { current } = queryInputRef;
     if (current) current.value = browser.query;
@@ -159,7 +169,19 @@ export default function OperatorBrowser() {
             )}
             <ErrorView
               schema={{
-                view: { detailed: true, popout: true, left: true },
+                view: {
+                  detailed: true,
+                  popout: true,
+                  componentsProps: {
+                    container: {
+                      popoutStyles: {
+                        maxWidth: "45vw",
+                        right: 0,
+                        left: "unset",
+                      },
+                    },
+                  },
+                },
               }}
               data={initializationErrors}
             />

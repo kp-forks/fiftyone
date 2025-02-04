@@ -1,10 +1,11 @@
 import * as fos from "@fiftyone/state";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRecoilValue, useSetRecoilState } from "recoil";
-import { ErrorBoundary } from "./ErrorBoundary";
+import { Fo3dErrorBoundary } from "./ErrorBoundary";
 import { MediaTypePcdComponent } from "./MediaTypePcd";
 import { ActionBar } from "./action-bar";
 import { Container } from "./containers";
+import { Leva } from "./fo3d/Leva";
 import { MediaTypeFo3dComponent } from "./fo3d/MediaTypeFo3d";
 import { useHotkey } from "./hooks";
 import {
@@ -23,7 +24,9 @@ import {
 export const Looker3d = () => {
   const mediaType = useRecoilValue(fos.mediaType);
   const hasFo3dSlice = useRecoilValue(fos.hasFo3dSlice);
-  const hasPcdSlices = useRecoilValue(fos.allPcdSlices).length > 0;
+  const hasPcdSlices = useRecoilValue(fos.groupMediaTypesSet).has(
+    "point_cloud"
+  );
   const isDynamicGroup = useRecoilValue(fos.isDynamicGroup);
   const parentMediaType = useRecoilValue(fos.parentMediaTypeSelector);
 
@@ -34,6 +37,8 @@ export const Looker3d = () => {
   const setCurrentAction = useSetRecoilState(currentActionAtom);
 
   const setFo3dHasBackground = useSetRecoilState(fo3dContainsBackground);
+
+  const thisSampleId = useRecoilValue(fos.modalSampleId);
 
   useEffect(() => {
     return () => {
@@ -56,20 +61,12 @@ export const Looker3d = () => {
     [mediaType, hasFo3dSlice, isDynamicGroup, parentMediaType]
   );
 
-  const sampleMap = useRecoilValue(fos.activePcdSlicesToSampleMap);
+  const sampleMap = useRecoilValue(fos.active3dSlicesToSampleMap);
 
   useHotkey(
     "KeyG",
     async ({ set }) => {
       set(isGridOnAtom, (prev) => !prev);
-    },
-    []
-  );
-
-  useHotkey(
-    "KeyF",
-    async ({ set }) => {
-      set(fos.fullscreen, (f) => !f);
     },
     []
   );
@@ -125,10 +122,12 @@ export const Looker3d = () => {
       }
 
       set(fos.hiddenLabels, {});
-      set(fos.currentModalSample, null);
+      set(fos.modalSelector, null);
     },
     [sampleMap, isHovering],
-    false
+    {
+      useTransaction: false,
+    }
   );
 
   const clear = useCallback(() => {
@@ -148,27 +147,20 @@ export const Looker3d = () => {
     };
   }, [clear, isHovering]);
 
-  if (mediaType === "group" && hasFo3dSlice && hasPcdSlices) {
-    return (
-      <div>
-        Only one fo3d slice or one or more pcd slices is allowed in a group.
-      </div>
-    );
-  }
-
   if (!shouldRenderPcdComponent && !shouldRenderFo3dComponent) {
     return <div>Unsupported media type: {mediaType}</div>;
   }
 
   const component = shouldRenderFo3dComponent ? (
-    <MediaTypeFo3dComponent />
+    <MediaTypeFo3dComponent key={thisSampleId} />
   ) : (
-    <MediaTypePcdComponent />
+    <MediaTypePcdComponent key={thisSampleId} />
   );
 
   return (
-    <ErrorBoundary>
-      <Container onMouseOver={update} onMouseMove={update} data-cy={"looker3d"}>
+    <Fo3dErrorBoundary boundaryName="fo3d">
+      <Leva />
+      <Container onMouseOver={update} onMouseMove={update} data-cy="looker3d">
         {component}
         <ActionBar
           onMouseEnter={() => {
@@ -179,6 +171,6 @@ export const Looker3d = () => {
           }}
         />
       </Container>
-    </ErrorBoundary>
+    </Fo3dErrorBoundary>
   );
 };

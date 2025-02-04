@@ -1,9 +1,39 @@
-import { Range } from "@fiftyone/core/src/components/Common/RangeSlider";
-import { getBrowserStorageEffectForKey } from "@fiftyone/state";
-import { atom } from "recoil";
+import type { Range } from "@fiftyone/core/src/components/Common/RangeSlider";
+import {
+  currentModalUniqueId,
+  getBrowserStorageEffectForKey,
+  groupId,
+  modalSampleId,
+} from "@fiftyone/state";
+import { atom, atomFamily, selector } from "recoil";
 import { SHADE_BY_HEIGHT } from "./constants";
-import { FoSceneNode } from "./hooks";
-import { Actions, ShadeBy } from "./types";
+import type { FoSceneNode } from "./hooks";
+import type { Actions, AssetLoadingLog, ShadeBy } from "./types";
+
+const fo3dAssetsParseStatusLog = atomFamily<AssetLoadingLog[], string>({
+  key: "fo3d-assetsParseStatusLogs",
+  default: [],
+});
+
+export const fo3dAssetsParseStatusThisSample = selector<AssetLoadingLog[]>({
+  key: "fo3d-assetsParseStatusLogs",
+  get: ({ get }) => {
+    const thisModalUniqueId = get(currentModalUniqueId);
+
+    return get(fo3dAssetsParseStatusLog(`${thisModalUniqueId}`));
+  },
+  set: ({ get, set }, newValue) => {
+    const thisSampleId = get(modalSampleId);
+    const thisGroupId = get(groupId) ?? "";
+
+    set(fo3dAssetsParseStatusLog(`${thisGroupId}/${thisSampleId}`), newValue);
+  },
+});
+
+export const cameraPositionAtom = atom<[number, number, number] | null>({
+  key: "fo3d-cameraPosition",
+  default: null,
+});
 
 export const shadeByAtom = atom<ShadeBy>({
   key: "fo3d-shadeBy",
@@ -57,6 +87,47 @@ export const isGridOnAtom = atom<boolean>({
   ],
 });
 
+export const isLevaConfigPanelOnAtom = atom<boolean>({
+  key: "fo3d-isLevaConfigPanelOn",
+  default: false,
+});
+
+export const gridCellSizeAtom = atom<number>({
+  key: "fo3d-gridCellSize",
+  default: 1,
+});
+
+export const gridSectionSizeAtom = atom<number>({
+  key: "fo3d-gridSectionSize",
+  default: 10,
+});
+
+export const isGridInfinitelyLargeAtom = atom<boolean>({
+  key: "fo3d-isGridInfinitelyLarge",
+  default: true,
+  effects: [
+    getBrowserStorageEffectForKey("fo3d-isGridInfinitelyLarge", {
+      valueClass: "boolean",
+    }),
+  ],
+});
+
+export const gridSizeAtom = atom<number>({
+  key: "fo3d-gridSize",
+  default: 1000,
+  effects: [getBrowserStorageEffectForKey("fo3d-gridSize")],
+});
+
+export const shouldGridFadeAtom = atom<boolean>({
+  key: "fo3d-shouldGridFade",
+  default: true,
+  effects: [
+    getBrowserStorageEffectForKey("fo3d-shouldGridFade", {
+      valueClass: "boolean",
+    }),
+  ],
+});
+
 export const fo3dContainsBackground = atom<boolean>({
   key: "fo3d-containsBackground",
   default: false,
@@ -80,4 +151,24 @@ export const isStatusBarOnAtom = atom<boolean>({
 export const activeNodeAtom = atom<FoSceneNode>({
   key: "fo3d-activeNode",
   default: null,
+});
+
+export const cuboidLabelLineWidthAtom = atom({
+  key: "fo3d-cuboidLabelLineWidth",
+  default: 3,
+  effects: [
+    getBrowserStorageEffectForKey("fo3d-cuboidLabelLineWidth", {
+      valueClass: "number",
+    }),
+  ],
+});
+
+export const polylineLabelLineWidthAtom = atom({
+  key: "fo3d-polylineLabelLineWidth",
+  default: 3,
+  effects: [
+    getBrowserStorageEffectForKey("fo3d-polylineLabelLineWidth", {
+      valueClass: "number",
+    }),
+  ],
 });

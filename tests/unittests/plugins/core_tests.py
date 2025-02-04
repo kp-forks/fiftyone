@@ -1,11 +1,22 @@
+"""
+FiftyOne plugin core tests.
+
+| Copyright 2017-2025, Voxel51, Inc.
+| `voxel51.com <https://voxel51.com/>`_
+|
+"""
+
+import json
 import os
+import pytest
+from unittest import mock
+
+import yaml
 
 import fiftyone as fo
-import pytest
-import json
-import yaml
-from unittest import mock
 import fiftyone.plugins as fop
+import fiftyone.utils.github as foug
+
 
 _DEFAULT_TEST_PLUGINS = ["test-plugin1", "test-plugin2"]
 _DEFAULT_APP_CONFIG = {}
@@ -39,19 +50,19 @@ def fiftyone_plugins_dir(tmp_path_factory):
     return fn
 
 
+def test_disable_plugin(app_config_path):
+    fop.disable_plugin("my-plugin", _allow_missing=True)
+    with open(app_config_path, "r") as f:
+        config = json.load(f)
+    assert config["plugins"]["my-plugin"]["enabled"] == False
+
+
 def test_enable_plugin(app_config_path):
-    fop.enable_plugin("my-plugin")
+    fop.enable_plugin("my-plugin", _allow_missing=True)
     with open(app_config_path, "r") as f:
         config = json.load(f)
 
     assert config["plugins"].get("my-plugin", {}).get("enabled", True) == True
-
-
-def test_disable_plugin(app_config_path):
-    fop.disable_plugin("my-plugin")
-    with open(app_config_path, "r") as f:
-        config = json.load(f)
-    assert config["plugins"]["my-plugin"]["enabled"] == False
 
 
 def test_delete_plugin_success(mocker, fiftyone_plugins_dir):
@@ -129,7 +140,7 @@ def mock_plugin_package_name(plugin_name, plugin_path):
     return fop.core.PluginPackage(plugin_name, plugin_path)
 
 
-def test_find_plugin_error_duplicate_name(mocker, fiftyone_plugins_dir):
+def test_duplicate_plugins(mocker, fiftyone_plugins_dir):
     mocker.patch("fiftyone.config.plugins_dir", fiftyone_plugins_dir)
 
     plugin_name = "test-plugin1"
@@ -139,5 +150,36 @@ def test_find_plugin_error_duplicate_name(mocker, fiftyone_plugins_dir):
         pd = {k: plugin_name + "-" + k for k in _REQUIRED_YML_KEYS}
         f.write(yaml.dump(pd))
 
-    with pytest.raises(ValueError):
-        _ = fop.find_plugin("test-plugin1-name")
+    plugin_names = [p.name for p in fop.list_plugins()]
+    assert plugin_names.count("test-plugin1-name") == 1
+
+    plugin_names = [p.name for p in fop.list_plugins(shadowed="all")]
+    assert plugin_names.count("test-plugin1-name") == 2
+
+    # Should NOT raise errors
+    fop.disable_plugin("test-plugin1-name")
+    fop.enable_plugin("test-plugin1-name")
+    _ = fop.find_plugin("test-plugin1-name")
+    _ = fop.get_plugin("test-plugin1-name")
+
+
+def test_github_repository_parse_url():
+    url = "https://github.com/USER/REPO/REF"
+    expected = {"user": "USER", "repo": "REPO", "ref": "REF"}
+    params = foug.GitHubRepository.parse_url(url)
+    assert params == expected
+
+    url = "https://github.com/USER/REPO/tree/BRANCH"
+    expected = {"user": "USER", "repo": "REPO", "ref": "BRANCH"}
+    params = foug.GitHubRepository.parse_url(url)
+    assert params == expected
+
+    url = "https://github.com/USER/REPO/tree/BRANCH/WITH/SLASHES"
+    expected = {"user": "USER", "repo": "REPO", "ref": "BRANCH/WITH/SLASHES"}
+    params = foug.GitHubRepository.parse_url(url)
+    assert params == expected
+
+    url = "https://github.com/USER/REPO/commit/COMMIT"
+    expected = {"user": "USER", "repo": "REPO", "ref": "COMMIT"}
+    params = foug.GitHubRepository.parse_url(url)
+    assert params == expected

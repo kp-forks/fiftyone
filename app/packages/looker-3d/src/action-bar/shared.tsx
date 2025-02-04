@@ -1,11 +1,16 @@
+import type React from "react";
+import { forwardRef } from "react";
 import { ActionPopOverDiv, ActionPopOverInner } from "../containers";
 
-export const ActionPopOver = (props: { children: React.ReactNode }) => {
+export const ActionPopOver = forwardRef<
+  HTMLDivElement,
+  { children: React.ReactNode }
+>((props, ref) => {
   const { children } = props;
 
   return (
-    <ActionPopOverDiv>
+    <ActionPopOverDiv ref={ref}>
       <ActionPopOverInner>{children}</ActionPopOverInner>
     </ActionPopOverDiv>
   );
-};
+});

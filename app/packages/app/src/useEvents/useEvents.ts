@@ -1,11 +1,13 @@
-import { Session } from "@fiftyone/state";
+import type { Session } from "@fiftyone/state";
 import { snakeCase } from "lodash";
-import { MutableRefObject, useCallback, useMemo } from "react";
-import { Queries } from "../makeRoutes";
-import { RoutingContext } from "../routing";
-import { AppReadyState, EVENTS } from "./registerEvent";
+import { type MutableRefObject, useCallback, useMemo } from "react";
+import type { Queries } from "../makeRoutes";
+import type { RoutingContext } from "../routing";
+import { type AppReadyState, EVENTS } from "./registerEvent";
 
 const HANDLERS = {};
+
+const IGNORE = new Set(["ping", ""]);
 
 const useEvents = (
   controller: AbortController,
@@ -27,13 +29,15 @@ const useEvents = (
   return {
     subscriptions,
     handler: useCallback((event: string, payload: string) => {
-      if (event === "ping") {
+      if (IGNORE.has(event)) {
         return;
       }
 
       if (!HANDLERS[event]) {
-        throw new Error(`event "${event}" is not registered`);
+        console.warn(`event "${event}" is not registered`);
+        return;
       }
+
       HANDLERS[event](JSON.parse(payload));
     }, []),
   };

@@ -1,9 +1,15 @@
 import { getSampleSrc } from "@fiftyone/state";
 import { useLoader } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BufferGeometry, Mesh, Points, Quaternion, Vector3 } from "three";
-import { PLYLoader } from "three/examples/jsm/loaders/PLYLoader";
 import {
+  type BufferGeometry,
+  Mesh,
+  Points,
+  type Quaternion,
+  type Vector3,
+} from "three";
+import { PLYLoader } from "three/examples/jsm/loaders/PLYLoader";
+import type {
   FoMeshBasicMaterialProps,
   FoMeshMaterial,
   FoPointcloudMaterialProps,
@@ -118,7 +124,13 @@ const PlyWithNoMaterialOverride = ({
 
 export const Ply = ({
   name,
-  ply: { plyPath, preTransformedPlyPath, defaultMaterial, isPcd },
+  ply: {
+    plyPath,
+    preTransformedPlyPath,
+    defaultMaterial,
+    isPcd,
+    centerGeometry,
+  },
   position,
   quaternion,
   scale,
@@ -155,7 +167,10 @@ export const Ply = ({
       !geometry.attributes.normal?.count
     ) {
       geometry.computeVertexNormals();
-      geometry.center();
+
+      if (centerGeometry) {
+        geometry.center();
+      }
     }
 
     if (geometry.attributes?.color?.count) {
@@ -163,7 +178,7 @@ export const Ply = ({
     }
 
     setIsGeometryResolved(true);
-  }, [geometry]);
+  }, [geometry, centerGeometry]);
 
   const mesh = useMemo(() => {
     if (!isGeometryResolved) {

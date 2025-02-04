@@ -3,12 +3,18 @@ FiftyOne: a powerful package for dataset curation, analysis, and visualization.
 
 See https://voxel51.com/fiftyone for more information.
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
 
+import logging
+from os import getenv
 from pkgutil import extend_path as _extend_path
+from sys import hexversion
+
+
+logger = logging.getLogger(__name__)
 
 #
 # This statement allows multiple `fiftyone.XXX` packages to be installed in the

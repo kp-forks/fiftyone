@@ -1,25 +1,56 @@
-import { PanelContext } from "../contexts";
-import { usePanel, useSpaces } from "../hooks";
-import { PanelProps } from "../types";
-import { warnPanelNotFound } from "../utils";
-import { StyledPanel } from "./StyledElements";
-import React from "react";
+import { CenteredStack, scrollable } from "@fiftyone/components";
 import * as fos from "@fiftyone/state";
+import React, { useEffect } from "react";
+import { useSetRecoilState } from "recoil";
+import { PANEL_LOADING_TIMEOUT } from "../constants";
+import { PanelContext } from "../contexts";
+import { useReactivePanel } from "../hooks";
+import { panelIdToScopeAtom } from "../state";
+import { PanelProps } from "../types";
+import PanelNotFound from "./PanelNotFound";
+import PanelSkeleton from "./PanelSkeleton";
+import { StyledPanel } from "./StyledElements";
 
-function Panel({ node, spaceId }: PanelProps) {
-  const { spaces } = useSpaces(spaceId);
-  const panelName = node.type;
-  const panel = usePanel(panelName);
+function Panel(props: PanelProps) {
+  const { node, isModalPanel } = props;
+  const panelName = node.type as string;
+  const panel = useReactivePanel(panelName);
   const dimensions = fos.useDimensions();
+  const pending = fos.useTimeout(PANEL_LOADING_TIMEOUT);
+  const setPanelIdToScope = useSetRecoilState(panelIdToScopeAtom);
+  const scope = isModalPanel ? "modal" : "grid";
+
+  useEffect(() => {
+    setPanelIdToScope((ids) => ({ ...ids, [node.id]: scope }));
+  }, [scope, setPanelIdToScope, node.id]);
+
+  const panelContentTestId = `panel-content-${panelName}`;
+
   if (!panel) {
-    spaces.removeNode(node);
-    return warnPanelNotFound(panelName);
+    return (
+      <StyledPanel data-cy={panelContentTestId}>
+        <CenteredStack>
+          {pending ? (
+            <PanelSkeleton />
+          ) : (
+            <PanelNotFound panelName={panelName} {...props} />
+          )}
+        </CenteredStack>
+      </StyledPanel>
+    );
   }
+
   const { component: Component } = panel;
 
   return (
-    <StyledPanel id={node.id} ref={dimensions.ref}>
-      <PanelContext.Provider value={{ node }}>
+    <StyledPanel
+      $isModalPanel={isModalPanel}
+      id={node.id}
+      data-cy={panelContentTestId}
+      className={scrollable}
+      ref={dimensions.ref}
+    >
+      <PanelContext.Provider value={{ node, scope }}>
         <Component panelNode={node} dimensions={dimensions} />
       </PanelContext.Provider>
     </StyledPanel>

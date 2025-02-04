@@ -1,7 +1,7 @@
 """
 Documents that track datasets and their sample schemas in the database.
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
@@ -9,6 +9,7 @@ Documents that track datasets and their sample schemas in the database.
 import logging
 
 from bson import DBRef, ObjectId
+from mongoengine.errors import ValidationError
 
 import eta.core.utils as etau
 
@@ -16,6 +17,7 @@ from fiftyone.core.fields import (
     BooleanField,
     ClassesField,
     ColorField,
+    DateField,
     DateTimeField,
     DictField,
     EmbeddedDocumentField,
@@ -67,6 +69,13 @@ class SampleFieldDocument(EmbeddedDocument):
     db_field = StringField(null=True)
     description = StringField(null=True)
     info = DictField(null=True)
+    read_only = BooleanField(default=False)
+    created_at = DateTimeField(null=True, default=None)
+
+    def _set_created_at(self, created_at):
+        self.created_at = created_at
+        for field in self.fields or []:
+            field._set_created_at(created_at)
 
     def to_field(self):
         """Creates the :class:`fiftyone.core.fields.Field` specified by this
@@ -98,6 +107,8 @@ class SampleFieldDocument(EmbeddedDocument):
             db_field=self.db_field,
             description=self.description,
             info=self.info,
+            read_only=self.read_only,
+            created_at=self.created_at,
         )
 
     @classmethod
@@ -125,6 +136,8 @@ class SampleFieldDocument(EmbeddedDocument):
             db_field=field.db_field,
             description=field.description,
             info=field.info,
+            read_only=field.read_only,
+            created_at=field.created_at,
         )
 
     @staticmethod
@@ -176,7 +189,7 @@ class ColorScheme(EmbeddedDocument):
 
         # Store a custom color scheme for a dataset
         dataset.app_config.color_scheme = fo.ColorScheme(
-            color_by="field",
+            color_by="value",
             color_pool=[
                 "#ff0000",
                 "#00ff00",
@@ -250,14 +263,18 @@ class ColorScheme(EmbeddedDocument):
             -   ``valueColors`` (optional): a list of dicts specifying colors
                 to use for individual values of this field
             -   ``maskTargetsColors`` (optional): a list of dicts specifying
-                index and color for 2D masks
+                index and color for 2D masks in the same format as described
+                below for default mask targets
         default_mask_targets_colors (None): a list of dicts with the following
             keys specifying index and color for 2D masks of the dataset. If a
             field does not have field specific mask targets colors, this list
             will be used:
 
-            -   ``intTarget``: integer target value
+            -   ``intTarget``: an integer target value
             -   ``color``: a color string
+
+            Note that the pixel value ``0`` is a reserved "background" class
+            that is always rendered as invisible in the App
         default_colorscale (None): dataset default colorscale dict with the
             following keys:
 
@@ -267,7 +284,7 @@ class ColorScheme(EmbeddedDocument):
 
                 -   ``value``: a float number between 0 and 1. A valid list
                     must have have colors defined for 0 and 1
-                -   ``color``: an rgb color string
+                -   ``color``: an RGB color string
         colorscales (None): an optional list of dicts of per-field custom
             colorscales with the following keys:
 
@@ -280,7 +297,7 @@ class ColorScheme(EmbeddedDocument):
 
                 -   ``value``: a float number between 0 and 1. A valid list
                     must have have colors defined for 0 and 1
-                -   ``color``: an rgb color string
+                -   ``color``: an RGB color string
         label_tags (None): an optional dict specifying custom colors for label
             tags with the following keys:
 
@@ -314,6 +331,137 @@ class ColorScheme(EmbeddedDocument):
     @_id.setter
     def _id(self, value):
         self.id = str(value)
+
+    def _validate(self):
+        self._validate_color_by()
+        self._validate_opacity()
+        self._validate_fields()
+        self._validate_default_mask_targets_colors()
+        self._validate_default_colorscale()
+        self._validate_colorscales()
+
+    def _validate_color_by(self):
+        if self.color_by not in [None, "field", "value", "instance"]:
+            raise ValidationError(
+                "color_by must be one of [None, 'field', 'value', 'instance']"
+            )
+
+    def _validate_opacity(self):
+        if self.opacity is not None and not 0 <= self.opacity <= 1:
+            raise ValidationError("opacity must be between 0 and 1")
+
+    def _validate_default_mask_targets_colors(self):
+        if self.default_mask_targets_colors:
+            self._validate_mask_targets(
+                self.default_mask_targets_colors, "default mask targets colors"
+            )
+
+    def _validate_fields(self):
+        if self.fields:
+            for field in self.fields:
+                path = field.get("path")
+                if not path:
+                    raise ValidationError(
+                        "path is required for each field in fields"
+                    )
+
+                mask_targets_colors = field.get("maskTargetsColors")
+                if mask_targets_colors:
+                    self._validate_mask_targets(
+                        mask_targets_colors, "mask target colors"
+                    )
+
+    def _validate_mask_targets(self, mask_targets, context):
+        for entry in mask_targets:
+            int_target_value = entry.get("intTarget")
+
+            if (
+                not isinstance(entry, dict)
+                or int_target_value is None
+                or not isinstance(int_target_value, int)
+                or int_target_value < 0
+            ):
+
+                raise ValidationError(
+                    f"Invalid intTarget in {context}."
+                    "intTarget must be a nonnegative integer."
+                    f"Invalid entry: {entry}"
+                )
+
+    def _validate_colorscales(self):
+        if self.colorscales is None:
+            return
+
+        if not isinstance(self.colorscales, list):
+            raise ValidationError("colorscales must be a list or None")
+
+        for scale in self.colorscales:
+            self._validate_single_colorscale(scale)
+
+    def _validate_default_colorscale(self):
+        if self.default_colorscale is None:
+            return
+
+        self._validate_single_colorscale(self.default_colorscale)
+
+    def _validate_single_colorscale(self, scale):
+        if not isinstance(scale, dict):
+            raise ValidationError(
+                f"Each colorscale entry must be a dict. Invalid entry: {scale}"
+            )
+
+        name = scale.get("name")
+        color_list = scale.get("list")
+
+        if name is None and color_list is None:
+            raise ValidationError(
+                "Each colorscale entry must have either a 'name' or a 'list'."
+                f"Invalid entry: {scale}"
+            )
+
+        if name is not None and not isinstance(name, str):
+            raise ValidationError(
+                "Invalid colorscale name."
+                "See https://plotly.com/python/colorscales for possible options."
+                f"Invalid name: {name}"
+            )
+
+        if color_list is not None:
+            if not isinstance(color_list, list):
+                raise ValidationError(
+                    "The 'list' field in colorscales must be a list."
+                    f"Invalid entry: {color_list}"
+                )
+
+            if len(color_list) == 0:
+                return
+
+            has_value_0 = False
+            has_value_1 = False
+
+            for entry in color_list:
+                value = entry.get("value")
+
+                if (
+                    value is None
+                    or not isinstance(value, (int, float))
+                    or not (0 <= value <= 1)
+                ):
+                    raise ValidationError(
+                        "Each entry in the 'list' must have a 'value'"
+                        f"between 0 and 1. Invalid entry: {entry}"
+                    )
+
+                if value == 0:
+                    has_value_0 = True
+                elif value == 1:
+                    has_value_1 = True
+
+            if not has_value_0 or not has_value_1:
+                raise ValidationError(
+                    "The colorscale 'list' must have colors defined for 0 and 1."
+                    f"Invalid list: {color_list}"
+                )
 
 
 class KeypointSkeleton(EmbeddedDocument):
@@ -366,22 +514,21 @@ class DatasetAppConfig(EmbeddedDocument):
     the App.
 
     Args:
+        color_scheme (None): an optional :class:`ColorScheme` for the dataset
+        disable_frame_filtering (False): whether to disable frame filtering for
+            video datasets in the App's grid view
+        grid_media_field ("filepath"): the default sample field from which to
+            serve media in the App's grid view
+            media_fallback (False): whether to fall back to the default media
+            field (``"filepath"``) when the alternate media field value for a
+            sample is not defined
         media_fields (["filepath"]): the list of sample fields that contain
             media and should be available to choose from the App's settings
             menus
-        grid_media_field ("filepath"): the default sample field from which to
-            serve media in the App's grid view
         modal_media_field ("filepath"): the default sample field from which to
             serve media in the App's modal view
-        media_fallback (False): whether to fall back to the default media field
-            (``"filepath"``) when the alternate media field value for a sample
-            is not defined
-        sidebar_mode (None): an optional default mode for the App sidebar.
-            Supported values are ``("fast", "all", "best", "disabled")``
-        sidebar_groups (None): an optional list of
-            :class:`SidebarGroupDocument` describing sidebar groups to use in
-            the App
-        color_scheme (None): an optional :class:`ColorScheme` for the dataset
+        dynamic_groups_target_frame_rate (30): the target frame rate when
+            rendering ordered dynamic groups of images as videos
         plugins ({}): an optional dict mapping plugin names to plugin
             configuration dicts. Builtin plugins include:
 
@@ -390,21 +537,25 @@ class DatasetAppConfig(EmbeddedDocument):
             -   ``"point-cloud"``: See the
                 :ref:`3D visualizer docs <app-3d-visualizer-config>` for
                 supported options
+        sidebar_groups (None): an optional list of
+            :class:`SidebarGroupDocument` describing sidebar groups to use in
+            the App
     """
 
     # strict=False lets this class ignore unknown fields from other versions
     meta = {"strict": False}
 
-    media_fields = ListField(StringField(), default=["filepath"])
+    color_scheme = EmbeddedDocumentField(ColorScheme, default=None)
+    disable_frame_filtering = BooleanField(default=None)
+    dynamic_groups_target_frame_rate = IntField(default=30)
     grid_media_field = StringField(default="filepath")
-    modal_media_field = StringField(default="filepath")
     media_fallback = BooleanField(default=False)
-    sidebar_mode = StringField(default=None)
+    media_fields = ListField(StringField(), default=["filepath"])
+    modal_media_field = StringField(default="filepath")
+    plugins = DictField()
     sidebar_groups = ListField(
         EmbeddedDocumentField(SidebarGroupDocument), default=None
     )
-    color_scheme = EmbeddedDocumentField(ColorScheme, default=None)
-    plugins = DictField()
 
     @staticmethod
     def default_sidebar_groups(sample_collection):
@@ -475,6 +626,44 @@ class DatasetAppConfig(EmbeddedDocument):
     def _rename_paths(self, paths, new_paths):
         for path, new_path in zip(paths, new_paths):
             self._rename_path(path, new_path)
+
+    def _add_path_to_sidebar_group(
+        self,
+        path,
+        sidebar_group,
+        after_group=None,
+        dataset=None,
+    ):
+        if self.sidebar_groups is None:
+            if dataset is None:
+                return
+
+            self.sidebar_groups = self.default_sidebar_groups(dataset)
+
+        index_group = None
+        for group in self.sidebar_groups:
+            if group.name == sidebar_group:
+                index_group = group
+            else:
+                if path in group.paths:
+                    group.paths.remove(path)
+
+        if index_group is None:
+            index_group = SidebarGroupDocument(name=sidebar_group)
+
+            insert_after = None
+            if after_group is not None:
+                for i, group in enumerate(self.sidebar_groups):
+                    if group.name == after_group:
+                        insert_after = i
+
+            if insert_after is None:
+                self.sidebar_groups.append(index_group)
+            else:
+                self.sidebar_groups.insert(insert_after + 1, index_group)
+
+        if path not in index_group.paths:
+            index_group.paths.append(path)
 
 
 def _make_default_sidebar_groups(sample_collection):
@@ -569,7 +758,15 @@ def _parse_schema(
                     custom.append((name, paths))
         elif isinstance(
             field,
-            (ObjectIdField, IntField, FloatField, StringField, BooleanField),
+            (
+                ObjectIdField,
+                IntField,
+                FloatField,
+                StringField,
+                BooleanField,
+                DateField,
+                DateTimeField,
+            ),
         ):
             if frames:
                 other.append(name)
@@ -616,6 +813,7 @@ class DatasetDocument(Document):
     slug = StringField()
     version = StringField(required=True, null=True)
     created_at = DateTimeField()
+    last_modified_at = DateTimeField()
     last_loaded_at = DateTimeField()
     sample_collection_name = StringField(unique=True, required=True)
     frame_collection_name = StringField()

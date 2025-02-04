@@ -32,7 +32,6 @@ export namespace State {
     showIndex: boolean;
     showLabel: boolean;
     showTooltip: boolean;
-    sidebarMode: "all" | "best" | "fast";
     timezone: string | null;
     theme: "browser" | "dark" | "light";
     useFrameNumber: boolean;
@@ -120,11 +119,11 @@ export namespace State {
   }
 
   export interface DatasetAppConfig {
+    dynamicGroupsTargetFrameRate: number;
     gridMediaField?: string;
     modalMediaField?: string;
     mediaFields?: string[];
     plugins?: PluginConfig;
-    sidebarMode?: "all" | "best" | "fast";
   }
 
   /**
@@ -157,20 +156,6 @@ export namespace State {
     info: { [key: string]: string };
   }
 
-  /**
-   * @hidden
-   */
-  export interface CategoricalFilter<T> {
-    values: T[];
-    isMatching: boolean;
-    exclude: boolean;
-  }
-
-  /**
-   * @hidden
-   */
-  export type Filter = CategoricalFilter<string>;
-
   export interface SortBySimilarityParameters {
     brainKey: string;
     distField?: string;
@@ -180,8 +165,13 @@ export namespace State {
     queryIds?: string[];
   }
 
+  type FilterValues = string | boolean | number | null | undefined;
+
+  export interface Filter {
+    [key: string]: FilterValues | Array<FilterValues>;
+  }
+
   export interface Filters {
-    _label_tags?: CategoricalFilter<string>;
     [key: string]: Filter;
   }
 

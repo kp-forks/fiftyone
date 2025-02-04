@@ -4,13 +4,13 @@ on: workflow_call
 
 jobs:
   test-app:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Cache
         id: node-cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             app/node_modules
@@ -20,13 +20,7 @@ jobs:
         if: steps.node-cache.outputs.cache-hit != 'true'
         run: cd app && yarn install
       - name: Run
-        run: cd app && yarn test --coverage && mv ./coverage/coverage-final.json ../
-      - name: Upload
-        uses: codecov/codecov-action@v3
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./coverage-final.json
-          flags: app
+        run: cd app && yarn test
 
   test-python:
     runs-on: ${{ matrix.os }}
@@ -39,12 +33,12 @@ jobs:
           - ubuntu-latest-m
           - windows-latest
         python:
-          - "3.8"
+          - "3.9"
           - "3.10"
           - "3.11"
         exclude:
           - os: windows-latest
-            python: "3.8"
+            python: "3.9"
           - os: windows-latest
             python: "3.10"
           - os: windows-latest
@@ -56,7 +50,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Setup
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         id: pip-cache
         with:
           python-version: ${{ matrix.python }}
@@ -78,7 +72,7 @@ jobs:
           python tests/utils/setup_config.py
           python tests/utils/github_actions_flags.py
       - name: FFmpeg
-        uses: FedericoCarboni/setup-ffmpeg@v2
+        uses: FedericoCarboni/setup-ffmpeg@v3
       # Important: use pytest_wrapper.py instead of pytest directly to ensure
       # that services shut down cleanly and do not conflict with steps later in
       # this workflow
@@ -93,7 +87,7 @@ jobs:
             --ignore tests/no_wrapper
       - name: Upload
         if: ${{ !startsWith(matrix.os, 'windows') && matrix.python == '3.11' }}
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage.xml

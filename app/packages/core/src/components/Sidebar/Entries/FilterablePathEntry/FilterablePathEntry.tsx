@@ -1,14 +1,13 @@
 import { useTheme } from "@fiftyone/components";
 import * as fos from "@fiftyone/state";
+import { makePseudoField } from "@fiftyone/utilities";
 import { Checkbox } from "@mui/material";
 import Color from "color";
 import React, { Suspense } from "react";
 import { useRecoilCallback, useRecoilValue } from "recoil";
 import FieldLabelAndInfo from "../../../FieldLabelAndInfo";
 import RegularEntry from "../RegularEntry";
-import { makePseudoField } from "../utils";
 import FilterablePathEntries from "./FilterablePathEntries";
-import LightningFilterablePathEntries from "./LightningFilterablePathEntries";
 import Loading from "./Loading";
 import useTitleTemplate from "./useTitleTemplate";
 
@@ -59,14 +58,8 @@ const FilterableEntry = ({
     fos.sidebarExpanded({ modal, path: expandedPath })
   );
   const onClick = useOnClick({ modal, path });
-  const lightning = useRecoilValue(fos.isLightningPath(path));
   const theme = useTheme();
   const color = disabled ? theme.background.paper : pathColor;
-
-  const Entries =
-    lightning && !modal
-      ? LightningFilterablePathEntries
-      : FilterablePathEntries;
 
   return (
     <RegularEntry
@@ -112,7 +105,7 @@ const FilterableEntry = ({
     >
       {expanded && (
         <Suspense fallback={<Loading />}>
-          <Entries
+          <FilterablePathEntries
             {...{
               modal,
               onBlur,

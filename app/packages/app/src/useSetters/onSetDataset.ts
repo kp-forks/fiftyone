@@ -1,18 +1,18 @@
 import {
   setDataset,
-  setDatasetMutation,
+  type setDatasetMutation,
   subscribeBefore,
 } from "@fiftyone/relay";
 import {
-  SPACES_DEFAULT,
+  GRID_SPACES_DEFAULT,
   ensureColorScheme,
   stateSubscription,
 } from "@fiftyone/state";
 import { env } from "@fiftyone/utilities";
 import { commitMutation } from "relay-runtime";
-import { DatasetPageQuery } from "../pages/datasets/__generated__/DatasetPageQuery.graphql";
+import type { DatasetPageQuery } from "../pages/datasets/__generated__/DatasetPageQuery.graphql";
 import { resolveURL } from "../utils";
-import { RegisteredSetter } from "./registerSetter";
+import type { RegisteredSetter } from "./registerSetter";
 
 const onSetDataset: RegisteredSetter =
   ({ environment, router, sessionRef }) =>
@@ -29,7 +29,7 @@ const onSetDataset: RegisteredSetter =
     const unsubscribe = subscribeBefore<DatasetPageQuery>((entry) => {
       sessionRef.current.selectedLabels = [];
       sessionRef.current.selectedSamples = new Set();
-      sessionRef.current.sessionSpaces = SPACES_DEFAULT;
+      sessionRef.current.sessionSpaces = GRID_SPACES_DEFAULT;
       sessionRef.current.fieldVisibilityStage = undefined;
       sessionRef.current.colorScheme = ensureColorScheme(
         entry.data.dataset?.appConfig,
@@ -47,6 +47,9 @@ const onSetDataset: RegisteredSetter =
         currentSearch: router.history.location.search,
         nextDataset: datasetName || null,
         extra: {
+          groupId: null,
+          id: null,
+          slice: null,
           workspace: null,
         },
       }),

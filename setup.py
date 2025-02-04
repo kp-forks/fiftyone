@@ -2,21 +2,18 @@
 """
 Installs FiftyOne.
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
-try:
-    from importlib import metadata
-except ImportError:
-    import importlib_metadata as metadata
 
+from importlib import metadata
 import os
 import re
 from setuptools import setup, find_packages
 
 
-VERSION = "0.24.0"
+VERSION = "1.4.0"
 
 
 def get_version():
@@ -44,14 +41,13 @@ INSTALL_REQUIRES = [
     "ftfy",
     "humanize",
     "hypercorn>=0.13.2",
-    "importlib-metadata; python_version<'3.8'",
     "Jinja2>=3",
     # kaleido indirectly required by plotly for image export
     # https://plotly.com/python/static-image-export/
     "kaleido!=0.2.1.post1",
     "matplotlib",
-    "mongoengine==0.24.2",
-    "motor>=2.5",
+    "mongoengine~=0.29.1",
+    "motor~=3.6.0",
     "numpy",
     "packaging",
     "pandas",
@@ -59,11 +55,12 @@ INSTALL_REQUIRES = [
     "plotly>=4.14",
     "pprintpp",
     "psutil",
-    "pymongo>=3.12",
+    "pymongo~=4.9.2",
     "pytz",
     "PyYAML",
     "regex",
     "retrying",
+    "rtree",
     "scikit-learn",
     "scikit-image",
     "scipy",
@@ -71,14 +68,15 @@ INSTALL_REQUIRES = [
     "sseclient-py>=1.7.2,<2",
     "sse-starlette>=0.10.3,<1",
     "starlette>=0.24.0",
-    "strawberry-graphql==0.138.1",
+    "strawberry-graphql",
     "tabulate",
     "xmltodict",
     "universal-analytics-python3>=1.0.1,<2",
+    "pydash",
     # internal packages
-    "fiftyone-brain>=0.16.1,<0.17",
+    "fiftyone-brain>=0.19.0,<0.20",
     "fiftyone-db>=0.4,<2.0",
-    "voxel51-eta>=0.12.6,<0.13",
+    "voxel51-eta>=0.14.0,<0.15",
 ]
 
 
@@ -115,9 +113,6 @@ def get_install_requirements(install_requires, choose_install_requires):
     return install_requires
 
 
-EXTRAS_REQUIREMENTS = {"desktop": ["fiftyone-desktop~=0.34.0"]}
-
-
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
@@ -132,7 +127,6 @@ setup(
     author="Voxel51, Inc.",
     author_email="info@voxel51.com",
     url="https://github.com/voxel51/fiftyone",
-    extras_require=EXTRAS_REQUIREMENTS,
     license="Apache",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -157,13 +151,10 @@ setup(
         "Operating System :: POSIX :: Linux",
         "Operating System :: Microsoft :: Windows",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.7",
-        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
-        "Programming Language :: Python :: 3.12",
     ],
     entry_points={"console_scripts": ["fiftyone=fiftyone.core.cli:main"]},
-    python_requires=">=3.7",
+    python_requires=">=3.9",
 )

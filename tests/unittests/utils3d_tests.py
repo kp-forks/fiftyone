@@ -1,7 +1,7 @@
 """
 FiftyOne 3D utilities unit tests.
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
@@ -10,6 +10,7 @@ import tempfile
 import unittest
 
 import numpy as np
+import numpy.testing as nptest
 import open3d as o3d
 from PIL import Image
 
@@ -285,6 +286,7 @@ class DataModelTests(unittest.TestCase):
         metadata.filepath = "test_path"
         metadata.min_bound = (1, 2, 3)
         metadata.max_bound = (4, 5, 6)
+        metadata.normal = (0, 0, 1)
         metadata.width = 100
         metadata.height = 100
 
@@ -304,6 +306,7 @@ class DataModelTests(unittest.TestCase):
         # tuples after deserialized are converted into np arrays
         self.assertTrue(np.array_equal(field["min_bound"], (1, 2, 3)))
         self.assertTrue(np.array_equal(field["max_bound"], (4, 5, 6)))
+        self.assertTrue(np.array_equal(field["normal"], (0, 0, 1)))
         self.assertEqual(field["width"], 100)
         self.assertEqual(field["height"], 100)
 
@@ -373,18 +376,28 @@ class GetSceneAssetPaths(unittest.TestCase):
             self.assertSetEqual(
                 set(asset_paths[scene_paths[0]]),
                 {
-                    os.path.realpath(f"{temp_dir}/back/ground.jpeg"),
-                    os.path.realpath(f"{temp_dir}/relative.obj"),
-                    os.path.realpath(f"{temp_dir}/absolute.pcd"),
+                    f"{temp_dir}/back/ground.jpeg",
+                    f"{temp_dir}/relative.obj",
+                    f"{temp_dir}/absolute.pcd",
                 },
             )
             self.assertSetEqual(
                 set(asset_paths[scene_paths[1]]),
                 {
-                    os.path.realpath(f"{temp_dir}/back/ground.jpeg"),
-                    os.path.realpath(f"{temp_dir}/relative2.stl"),
+                    f"{temp_dir}/back/ground.jpeg",
+                    f"{temp_dir}/relative2.stl",
                 },
             )
+
+
+class BoxTests(unittest.TestCase):
+    def test_box_vertices(self):
+        rotation = [0, 0, 0]
+        location = [0, 0, 0]
+        scale = [1, 1, 1]
+        box = fou3d._Box(rotation, location, scale)
+        expected = fou3d._UNIT_BOX
+        nptest.assert_equal(expected, box.vertices)
 
 
 if __name__ == "__main__":

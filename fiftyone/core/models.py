@@ -1,7 +1,7 @@
 """
 FiftyOne models.
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
@@ -988,6 +988,9 @@ def _compute_image_embeddings_single(
     if errors:
         return embeddings  # may contain None, must return as list
 
+    if not embeddings:
+        return np.empty((0, 0), dtype=float)
+
     return np.stack(embeddings)
 
 
@@ -1034,6 +1037,9 @@ def _compute_image_embeddings_batch(
 
     if errors:
         return embeddings  # may contain None, must return as list
+
+    if not embeddings:
+        return np.empty((0, 0), dtype=float)
 
     return np.stack(embeddings)
 
@@ -1096,6 +1102,9 @@ def _compute_image_embeddings_data_loader(
 
     if errors:
         return embeddings  # may contain None, must return as list
+
+    if not embeddings:
+        return np.empty((0, 0), dtype=float)
 
     return np.stack(embeddings)
 
@@ -1277,6 +1286,9 @@ def _compute_video_embeddings(
     if errors:
         return embeddings  # may contain None, must return as list
 
+    if not embeddings:
+        return np.empty((0, 0), dtype=float)
+
     return np.stack(embeddings)
 
 
@@ -1328,8 +1340,8 @@ def compute_patch_embeddings(
             before extracting them, in ``[-1, inf)``. If provided, the length
             and width of the box are expanded (or contracted, when
             ``alpha < 0``) by ``(100 * alpha)%``. For example, set
-            ``alpha = 1.1`` to expand the boxes by 10%, and set ``alpha = 0.9``
-            to contract the boxes by 10%
+            ``alpha = 0.1`` to expand the boxes by 10%, and set
+            ``alpha = -0.1`` to contract the boxes by 10%
         handle_missing ("skip"): how to handle images with no patches.
             Supported values are:
 
@@ -1572,6 +1584,9 @@ def _embed_patches_single(model, img, detections, force_square, alpha):
         )
         embedding = model.embed(patch)
         embeddings.append(embedding)
+
+    if not embeddings:
+        return None
 
     return np.stack(embeddings)
 

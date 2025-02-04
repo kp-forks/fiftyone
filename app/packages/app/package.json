@@ -5,14 +5,16 @@
     "private": true,
     "main": "./src/index.tsx",
     "scripts": {
+        "check": "biome check --write ./src README.md tsconfig.json vite.config.ts",
         "dev": "vite",
         "build": "yarn workspace @fiftyone/fiftyone compile && yarn build-bare && yarn copy-to-python",
+        "build:win32": "yarn workspace @fiftyone/fiftyone compile && yarn build-bare && yarn copy-to-python:win32",
         "build-bare": "NODE_OPTIONS=--max-old-space-size=4096 && tsc && vite build",
-        "build-desktop": "NODE_OPTIONS=--max-old-space-size=4096 && tsc && vite build --mode desktop",
         "copy-to-python": "rm -rf ../../../fiftyone/server/static && cp -r ./dist ../../../fiftyone/server/static",
-        "copy-to-desktop": "rm -rf ../desktop/dist/ && cp -r ./dist ../desktop/dist"
+        "copy-to-python:win32": "robocopy './dist' '../../../fiftyone/server/static' /MIR"
     },
     "dependencies": {
+        "@fiftyone/analytics": "*",
         "@fiftyone/components": "*",
         "@fiftyone/core": "*",
         "@fiftyone/relay": "*",
@@ -25,7 +27,7 @@
         "lodash": "^4.17.21",
         "notistack": "^3.0.1",
         "numeral": "^2.0.6",
-        "path-to-regexp": "^6.2.0",
+        "path-to-regexp": "^8.0.0",
         "react": "18.2.0",
         "react-dom": "18.2.0",
         "react-error-boundary": "^3.1.4",
@@ -41,6 +43,7 @@
         "uuid": "^8.3.2"
     },
     "devDependencies": {
+        "@biomejs/biome": "^1.8.3",
         "@types/lodash": "^4.14.182",
         "@types/mime": "^2.0.3",
         "@types/react": "^18.2.48",
@@ -48,14 +51,14 @@
         "@types/react-router": "^5.1.20",
         "@types/styled-components": "^5.1.23",
         "@vitejs/plugin-react-refresh": "^1.3.3",
-        "prettier": "2.2.1",
         "relay-compiler": "^14.1.0",
         "rollup-plugin-polyfill-node": "^0.6.2",
-        "typescript": "^4.7.4",
+        "typescript": "^5.3.2",
         "typescript-plugin-css-modules": "^5.0.2",
-        "vite": "^3.2.10",
+        "vite": "^5.4.12",
         "vite-plugin-relay": "^1.0.7",
-        "vite-plugin-rewrite-all": "^1.0.2"
+        "vite-plugin-rewrite-all": "^1.0.2",
+        "vite-plugin-svgr": "^4.2.0"
     },
     "peerDependencies": {
         "@mui/icons-material": "*",

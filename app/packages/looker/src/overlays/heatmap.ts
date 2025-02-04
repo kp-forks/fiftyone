@@ -1,32 +1,30 @@
 /**
- * Copyright 2017-2024, Voxel51, Inc.
+ * Copyright 2017-2025, Voxel51, Inc.
  */
 import {
   get32BitColor,
   getColor,
   getRGBA,
   getRGBAColor,
+  sizeBytesEstimate,
 } from "@fiftyone/utilities";
-import { ARRAY_TYPES, OverlayMask, TypedArray } from "../numpy";
+import { ARRAY_TYPES, TypedArray } from "../numpy";
 import { BaseState, Coordinates } from "../state";
 import { isFloatArray } from "../util";
+import { clampedIndex } from "../worker/painter";
 import {
   BaseLabel,
   CONTAINS,
-  isShown,
+  LabelMask,
   Overlay,
   PointInfo,
   SelectData,
+  isShown,
 } from "./base";
-import { sizeBytes, strokeCanvasRect, t } from "./util";
-
-interface HeatMap {
-  data: OverlayMask;
-  image: ArrayBuffer;
-}
+import { strokeCanvasRect, t } from "./util";
 
 interface HeatmapLabel extends BaseLabel {
-  map?: HeatMap;
+  map?: LabelMask;
   range?: [number, number];
 }
 
@@ -41,11 +39,9 @@ export default class HeatmapOverlay<State extends BaseState>
   implements Overlay<State>
 {
   readonly field: string;
-  private label: HeatmapLabel;
+  readonly label: HeatmapLabel;
   private targets?: TypedArray;
   private readonly range: [number, number];
-  private canvas: HTMLCanvasElement;
-  private imageData: ImageData;
 
   constructor(field: string, label: HeatmapLabel) {
     this.field = field;
@@ -67,25 +63,6 @@ export default class HeatmapOverlay<State extends BaseState>
     if (!width || !height) {
       return;
     }
-
-    this.canvas = document.createElement("canvas");
-    this.canvas.width = width;
-    this.canvas.height = height;
-
-    this.imageData = new ImageData(
-      new Uint8ClampedArray(this.label.map.image),
-      width,
-      height
-    );
-    const maskCtx = this.canvas.getContext("2d");
-    maskCtx.imageSmoothingEnabled = false;
-    maskCtx.clearRect(
-      0,
-      0,
-      this.label.map.data.shape[1],
-      this.label.map.data.shape[0]
-    );
-    maskCtx.putImageData(this.imageData, 0, 0);
   }
 
   containsPoint(state: Readonly<State>): CONTAINS {
@@ -100,22 +77,12 @@ export default class HeatmapOverlay<State extends BaseState>
   }
 
   draw(ctx: CanvasRenderingContext2D, state: Readonly<State>): void {
-    if (this.imageData) {
-      const maskCtx = this.canvas.getContext("2d");
-      maskCtx.imageSmoothingEnabled = false;
-      maskCtx.clearRect(
-        0,
-        0,
-        this.label.map.data.shape[1],
-        this.label.map.data.shape[0]
-      );
-      maskCtx.putImageData(this.imageData, 0, 0);
-
+    if (this.label.map?.bitmap) {
       const [tlx, tly] = t(state, 0, 0);
       const [brx, bry] = t(state, 1, 1);
       const tmp = ctx.globalAlpha;
       ctx.globalAlpha = state.options.alpha;
-      ctx.drawImage(this.canvas, tlx, tly, brx - tlx, bry - tly);
+      ctx.drawImage(this.label.map.bitmap, tlx, tly, brx - tlx, bry - tly);
       ctx.globalAlpha = tmp;
     }
 
@@ -174,10 +141,6 @@ export default class HeatmapOverlay<State extends BaseState>
     return getHeatmapPoints([]);
   }
 
-  getSizeBytes(): number {
-    return sizeBytes(this.label);
-  }
-
   private getIndex(state: Readonly<State>): number {
     const [sx, sy] = this.getMapCoordinates(state);
     if (sx < 0 || sy < 0) {
@@ -204,12 +167,13 @@ export default class HeatmapOverlay<State extends BaseState>
     }
 
     if (state.options.coloring.by === "value") {
-      const index = Math.round(
-        (Math.max(value - start, 0) / (stop - start)) *
-          (state.options.coloring.scale.length - 1)
+      const index = clampedIndex(
+        value,
+        start,
+        stop,
+        state.options.coloring.scale.length
       );
-
-      return get32BitColor(state.options.coloring.scale[index]);
+      return index < 0 ? 0 : get32BitColor(state.options.coloring.scale[index]);
     }
 
     const color = getColor(
@@ -219,9 +183,9 @@ export default class HeatmapOverlay<State extends BaseState>
     );
     const max = Math.max(Math.abs(start), Math.abs(stop));
 
-    value = Math.min(max, Math.abs(value)) / max;
+    const result = Math.min(max, Math.abs(value)) / max;
 
-    return get32BitColor(color, value / max);
+    return get32BitColor(color, result / max);
   }
 
   private getTarget(state: Readonly<State>): number {
@@ -236,6 +200,15 @@ export default class HeatmapOverlay<State extends BaseState>
     }
 
     return this.targets[index];
+  }
+
+  getSizeBytes(): number {
+    return sizeBytesEstimate(this.label);
+  }
+
+  public cleanup(): void {
+    this.label.map?.bitmap?.close();
+    this.targets = null;
   }
 }
 

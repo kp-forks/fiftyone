@@ -6,24 +6,20 @@ import { SuspenseEntryCounts } from "../../Common/CountSubcount";
 interface PathEntryCountsProps {
   path: string;
   modal: boolean;
-  ignoreSidebarMode?: boolean;
 }
 
 const showEntryCounts = selectorFamily<
   boolean,
-  { always?: boolean; path: string; modal: boolean }
+  { path: string; modal: boolean }
 >({
   key: "showEntryCounts",
   get:
     (params) =>
     ({ get }) => {
-      const mode = get(fos.resolvedSidebarMode(params.modal));
-
       if (
-        params.always ||
         params.modal ||
         params.path === "" ||
-        mode === "all" ||
+        params.path === "_" ||
         get(fos.sidebarExpanded(params))
       ) {
         return true;
@@ -33,28 +29,25 @@ const showEntryCounts = selectorFamily<
     },
 });
 
-export const PathEntryCounts = ({
-  modal,
-  path,
-  ignoreSidebarMode,
-}: PathEntryCountsProps) => {
+export const PathEntryCounts = ({ modal, path }: PathEntryCountsProps) => {
   const getAtom = useCallback(
-    (extended: boolean) =>
-      fos.count({
+    (extended: boolean) => {
+      return fos.count({
         extended,
         modal,
         path,
-      }),
+      });
+    },
     [modal, path]
   );
+  const hasFilters = useRecoilValue(fos.fieldIsFiltered({ modal, path }));
+  const queryPerformance = useRecoilValue(fos.queryPerformance) && !modal;
+  const shown = useRecoilValue(showEntryCounts({ modal, path }));
 
-  const shown = useRecoilValue(
-    showEntryCounts({ path, modal, always: ignoreSidebarMode })
-  );
-
-  return shown ? (
+  // empty path means we are showing grid sample count which is always allowed
+  return (!queryPerformance || hasFilters || path === "") && shown ? (
     <SuspenseEntryCounts
-      countAtom={getAtom(false)}
+      countAtom={queryPerformance ? undefined : getAtom(false)}
       subcountAtom={getAtom(true)}
     />
   ) : null;
@@ -64,7 +57,7 @@ const labelTagCount = selectorFamily<
   number,
   { modal: boolean; tag: string; extended: boolean }
 >({
-  key: `labelTagCount`,
+  key: "labelTagCount",
   get:
     ({ tag, ...rest }) =>
     ({ get }) => {
@@ -79,7 +72,7 @@ const labelTagCount = selectorFamily<
 });
 
 export const labelTagsCount = selectorFamily({
-  key: `labelTagsCount`,
+  key: "labelTagsCount",
   get:
     (props: { modal: boolean; extended: boolean }) =>
     ({ get }) => {

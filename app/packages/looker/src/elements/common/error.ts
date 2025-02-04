@@ -1,9 +1,9 @@
 /**
- * Copyright 2017-2024, Voxel51, Inc.
+ * Copyright 2017-2025, Voxel51, Inc.
  */
 import copy from "copy-to-clipboard";
 
-import { BaseState, StateUpdate } from "../../state";
+import { BaseState } from "../../state";
 import { BaseElement } from "../base";
 
 import { AppError } from "@fiftyone/utilities";
@@ -63,18 +63,14 @@ export class ErrorElement<State extends BaseState> extends BaseElement<State> {
             const videoText = document.createElement("p");
             videoText.innerHTML = `You can use
               <code>
-                <a>
+                <a
+                  href="https://docs.voxel51.com/api/fiftyone.utils.video.html#fiftyone.utils.video.reencode_videos"
+                  target="_blank"
+                >
                   fiftyone.utils.video.reencode_videos()
                 </a>
               </code>
               to re-encode videos in a supported format.`;
-            videoText
-              .querySelector("a")
-              .addEventListener("click", () =>
-                onClick(
-                  "https://docs.voxel51.com/api/fiftyone.utils.video.html#fiftyone.utils.video.reencode_videos"
-                )
-              );
             textDiv.appendChild(videoText);
           }
         } else {
@@ -107,30 +103,11 @@ export class ErrorElement<State extends BaseState> extends BaseElement<State> {
       }
     }
 
+    if (!error && this.errorElement) {
+      this.errorElement.remove();
+      this.errorElement = null;
+    }
+
     return this.errorElement;
   }
 }
-
-const onClick = (href) => {
-  let openExternal;
-  if (isElectron()) {
-    try {
-      openExternal = require("electron").shell.openExternal;
-    } catch {}
-  }
-
-  return openExternal
-    ? (e) => {
-        e.preventDefault();
-        openExternal(href);
-      }
-    : null;
-};
-
-const isElectron = (): boolean => {
-  return (
-    window.process &&
-    window.process.versions &&
-    Boolean(window.process.versions.electron)
-  );
-};

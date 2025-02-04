@@ -1,16 +1,17 @@
 """
 FiftyOne Server paginator
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
+
 from bson import ObjectId
 import motor.motor_asyncio as mtr
 import typing as t
 
 import strawberry as gql
-from strawberry.unset import UNSET
+from strawberry import UNSET
 
 import fiftyone.core.odm as foo
 
@@ -31,8 +32,8 @@ class PageInfo(t.Generic[C]):
 
 @gql.type
 class Edge(t.Generic[T, C]):
-    node: T
     cursor: C
+    node: T
 
 
 @gql.type

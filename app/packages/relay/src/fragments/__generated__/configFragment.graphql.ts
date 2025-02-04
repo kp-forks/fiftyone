@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<e793650aee470e8b9fad177e5178503f>>
+ * @generated SignedSource<<8948f8dd72ac5718c73fbe2a21d573df>>
  * @lightSyntaxTransform
  * @nogrep
  */
@@ -10,7 +10,6 @@
 
 import { Fragment, ReaderFragment } from 'relay-runtime';
 export type ColorBy = "field" | "instance" | "value" | "%future added value";
-export type SidebarMode = "all" | "best" | "disabled" | "fast" | "%future added value";
 export type Theme = "browser" | "dark" | "light" | "%future added value";
 import { FragmentRefs } from "relay-runtime";
 export type configFragment$data = {
@@ -19,8 +18,10 @@ export type configFragment$data = {
     readonly colorBy: ColorBy;
     readonly colorPool: ReadonlyArray<string>;
     readonly colorscale: string;
+    readonly defaultQueryPerformance: boolean;
+    readonly disableFrameFiltering: boolean;
+    readonly enableQueryPerformance: boolean;
     readonly gridZoom: number;
-    readonly lightningThreshold: number | null;
     readonly loopVideos: boolean;
     readonly mediaFallback: boolean;
     readonly multicolorKeypoints: boolean;
@@ -31,7 +32,6 @@ export type configFragment$data = {
     readonly showLabel: boolean;
     readonly showSkeletons: boolean;
     readonly showTooltip: boolean;
-    readonly sidebarMode: SidebarMode;
     readonly theme: Theme;
     readonly timezone: string | null;
     readonly useFrameNumber: boolean;
@@ -84,6 +84,13 @@ return {
           "alias": null,
           "args": null,
           "kind": "ScalarField",
+          "name": "disableFrameFiltering",
+          "storageKey": null
+        },
+        {
+          "alias": null,
+          "args": null,
+          "kind": "ScalarField",
           "name": "gridZoom",
           "storageKey": null
         },
@@ -91,7 +98,14 @@ return {
           "alias": null,
           "args": null,
           "kind": "ScalarField",
-          "name": "lightningThreshold",
+          "name": "enableQueryPerformance",
+          "storageKey": null
+        },
+        {
+          "alias": null,
+          "args": null,
+          "kind": "ScalarField",
+          "name": "defaultQueryPerformance",
           "storageKey": null
         },
         {
@@ -99,6 +113,13 @@ return {
           "args": null,
           "kind": "ScalarField",
           "name": "loopVideos",
+          "storageKey": null
+        },
+        {
+          "alias": null,
+          "args": null,
+          "kind": "ScalarField",
+          "name": "mediaFallback",
           "storageKey": null
         },
         {
@@ -161,13 +182,6 @@ return {
           "alias": null,
           "args": null,
           "kind": "ScalarField",
-          "name": "sidebarMode",
-          "storageKey": null
-        },
-        {
-          "alias": null,
-          "args": null,
-          "kind": "ScalarField",
           "name": "theme",
           "storageKey": null
         },
@@ -184,13 +198,6 @@ return {
           "kind": "ScalarField",
           "name": "useFrameNumber",
           "storageKey": null
-        },
-        {
-          "alias": null,
-          "args": null,
-          "kind": "ScalarField",
-          "name": "mediaFallback",
-          "storageKey": null
         }
       ],
       "storageKey": null
@@ -202,6 +209,6 @@ return {
 };
 })();
 
-(node as any).hash = "bc14e5070d7a1c87baa60bc81fcccb5d";
+(node as any).hash = "4e3c420ab0b75831727c079a3e1f940d";
 
 export default node;

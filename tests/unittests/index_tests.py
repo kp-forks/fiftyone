@@ -1,7 +1,7 @@
 """
 FiftyOne Server index related unit test
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
@@ -28,6 +28,14 @@ class ServerIndexTests(unittest.TestCase):
                 name="filepath",
                 key=[IndexFields(field="filepath", type="asc")],
             ),
+            Index(
+                name="created_at",
+                key=[IndexFields(field="created_at", type="asc")],
+            ),
+            Index(
+                name="last_modified_at",
+                key=[IndexFields(field="last_modified_at", type="asc")],
+            ),
         ], []
         sample_result, frame_result = from_dict(
             dataset.get_index_information()
@@ -47,6 +55,14 @@ class ServerIndexTests(unittest.TestCase):
             Index(
                 name="filepath",
                 key=[IndexFields(field="filepath", type="asc")],
+            ),
+            Index(
+                name="created_at",
+                key=[IndexFields(field="created_at", type="asc")],
+            ),
+            Index(
+                name="last_modified_at",
+                key=[IndexFields(field="last_modified_at", type="asc")],
             ),
             Index(
                 name="group.id",
@@ -76,6 +92,14 @@ class ServerIndexTests(unittest.TestCase):
                 name="filepath",
                 key=[IndexFields(field="filepath", type="asc")],
             ),
+            Index(
+                name="created_at",
+                key=[IndexFields(field="created_at", type="asc")],
+            ),
+            Index(
+                name="last_modified_at",
+                key=[IndexFields(field="last_modified_at", type="asc")],
+            ),
         ], [
             Index(
                 name="id",
@@ -88,6 +112,14 @@ class ServerIndexTests(unittest.TestCase):
                     IndexFields(field="frame_number", type="asc"),
                 ],
                 unique=True,
+            ),
+            Index(
+                name="created_at",
+                key=[IndexFields(field="created_at", type="asc")],
+            ),
+            Index(
+                name="last_modified_at",
+                key=[IndexFields(field="last_modified_at", type="asc")],
             ),
         ]
         sample_result, frame_result = from_dict(

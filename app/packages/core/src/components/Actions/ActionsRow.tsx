@@ -1,20 +1,30 @@
+import { useTrackEvent } from "@fiftyone/analytics";
 import {
+  AdaptiveMenu,
+  AdaptiveMenuItemComponentPropsType,
+  LoadingDots,
   PillButton,
-  scrollable,
-  scrollableSm,
   useTheme,
 } from "@fiftyone/components";
 import { FrameLooker, ImageLooker, VideoLooker } from "@fiftyone/looker";
-import { OperatorPlacements, types } from "@fiftyone/operators";
-import { useOperatorBrowser } from "@fiftyone/operators/src/state";
+import {
+  OperatorPlacementWithErrorBoundary,
+  OperatorPlacements,
+  types,
+  useOperatorBrowser,
+  useOperatorPlacements,
+} from "@fiftyone/operators";
 import { subscribe } from "@fiftyone/relay";
 import * as fos from "@fiftyone/state";
 import { useEventHandler, useOutsideClick } from "@fiftyone/state";
+import { useItemsWithOrderPersistence } from "@fiftyone/utilities";
 import {
   Bookmark,
   Check,
   ColorLens,
   FlipToBack,
+  Fullscreen,
+  FullscreenExit,
   KeyboardArrowLeft,
   KeyboardArrowRight,
   List,
@@ -24,13 +34,17 @@ import {
   VisibilityOff,
   Wallpaper,
 } from "@mui/icons-material";
+import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
+import { Box } from "@mui/material";
 import React, {
   MutableRefObject,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
+import Draggable from "react-draggable";
 import {
   selector,
   useRecoilCallback,
@@ -38,9 +52,9 @@ import {
   useRecoilValue,
 } from "recoil";
 import styled from "styled-components";
-import LoadingDots from "../../../../components/src/components/Loading/LoadingDots";
 import { activeColorEntry } from "../ColorModal/state";
 import { ACTIVE_FIELD } from "../ColorModal/utils";
+import { useModalContext } from "../Modal/hooks";
 import { DynamicGroupAction } from "./DynamicGroupAction";
 import { GroupMediaVisibilityContainer } from "./GroupMediaVisibilityContainer";
 import OptionsActions from "./Options";
@@ -48,7 +62,9 @@ import Patcher, { patchesFields } from "./Patcher";
 import Selector from "./Selected";
 import Tagger from "./Tagger";
 import SortBySimilarity from "./similar/Similar";
-import { ActionDiv } from "./utils";
+import { ActionDiv, getStringAndNumberProps } from "./utils";
+
+const MODAL_ACTION_BAR_HANDLE_CLASS = "fo-modal-action-bar-handle";
 
 export const shouldToggleBookMarkIconOnSelector = selector<boolean>({
   key: "shouldToggleBookMarkIconOn",
@@ -78,12 +94,17 @@ export const shouldToggleBookMarkIconOnSelector = selector<boolean>({
   },
 });
 
-const Loading = () => {
+const Loading = ({ style }: { style?: React.CSSProperties }) => {
   const theme = useTheme();
-  return <LoadingDots text="" style={{ color: theme.text.primary }} />;
+  return (
+    <LoadingDots
+      text=""
+      style={{ color: theme.text.primary, ...(style ?? {}) }}
+    />
+  );
 };
 
-const Patches = () => {
+const Patches = ({ adaptiveMenuItemProps }: ActionProps) => {
   const [open, setOpen] = useState(false);
   const loading = useRecoilValue(fos.patching);
   const isVideo = useRecoilValue(fos.isVideoDataset);
@@ -92,7 +113,10 @@ const Patches = () => {
   const fields = useRecoilValue(patchesFields);
 
   return (
-    <ActionDiv ref={ref}>
+    <ActionDiv
+      {...(getStringAndNumberProps(adaptiveMenuItemProps) || {})}
+      ref={ref}
+    >
       <PillButton
         icon={loading ? <Loading /> : <FlipToBack />}
         open={open}
@@ -107,7 +131,12 @@ const Patches = () => {
   );
 };
 
-const Similarity = ({ modal }: { modal: boolean }) => {
+const Similarity = ({
+  modal,
+  adaptiveMenuItemProps,
+}: ActionProps & {
+  modal: boolean;
+}) => {
   const [open, setOpen] = useState(false);
   const [isImageSearch, setIsImageSearch] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -123,11 +152,15 @@ const Similarity = ({ modal }: { modal: boolean }) => {
   }, [showImageSimilarityIcon]);
 
   return (
-    <ActionDiv ref={ref}>
+    <ActionDiv
+      {...(getStringAndNumberProps(adaptiveMenuItemProps) || {})}
+      ref={ref}
+    >
       <PillButton
         key={"button"}
         icon={showImageSimilarityIcon ? <Wallpaper /> : <Search />}
         open={open}
+        tooltipPlacement={modal ? "bottom" : "top"}
         onClick={toggleSimilarity}
         highlight={true}
         title={`Sort by ${
@@ -152,7 +185,8 @@ const Similarity = ({ modal }: { modal: boolean }) => {
 const Tag = ({
   modal,
   lookerRef,
-}: {
+  adaptiveMenuItemProps,
+}: ActionProps & {
   modal: boolean;
   lookerRef?: MutableRefObject<
     VideoLooker | ImageLooker | FrameLooker | undefined
@@ -186,8 +220,12 @@ const Tag = ({
     : baseTitle;
 
   return (
-    <ActionDiv ref={ref}>
+    <ActionDiv
+      {...(getStringAndNumberProps(adaptiveMenuItemProps) || {})}
+      ref={ref}
+    >
       <PillButton
+        tooltipPlacement={modal ? "bottom" : "top"}
         style={{
           cursor: disableTag
             ? "not-allowed"
@@ -217,10 +255,12 @@ const Tag = ({
 const Selected = ({
   modal,
   lookerRef,
-}: {
+  adaptiveMenuItemProps,
+}: ActionProps & {
   modal: boolean;
   lookerRef?: MutableRefObject<fos.Lookers | undefined>;
 }) => {
+  const { refresh } = adaptiveMenuItemProps || {};
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const samples = useRecoilValue(fos.selectedSamples);
@@ -232,6 +272,16 @@ const Selected = ({
     useEventHandler(lookerRef.current, "buffering", (e) =>
       setLoading(e.detail)
     );
+
+  useEffect(() => {
+    refresh?.();
+  }, [samples.size, refresh]);
+
+  useEffect(() => {
+    return () => {
+      setLoading(false);
+    };
+  }, []);
 
   if (samples.size < 1 && !modal) {
     return null;
@@ -245,7 +295,10 @@ const Selected = ({
   }
 
   return (
-    <ActionDiv ref={ref}>
+    <ActionDiv
+      {...(getStringAndNumberProps(adaptiveMenuItemProps) || {})}
+      ref={ref}
+    >
       <PillButton
         icon={loading ? <Loading /> : <Check />}
         open={open}
@@ -258,6 +311,7 @@ const Selected = ({
         highlight={samples.size > 0 || open || (labels.size > 0 && modal)}
         text={text}
         title={`Manage selected`}
+        tooltipPlacement={modal ? "bottom" : "top"}
         style={{
           cursor: loading ? "default" : "pointer",
         }}
@@ -275,14 +329,21 @@ const Selected = ({
   );
 };
 
-const Options = ({ modal }) => {
+const Options = ({
+  modal,
+  adaptiveMenuItemProps,
+}: ActionProps & { modal?: boolean }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useOutsideClick(ref, () => open && setOpen(false));
 
   return (
-    <ActionDiv ref={ref}>
+    <ActionDiv
+      {...(getStringAndNumberProps(adaptiveMenuItemProps) || {})}
+      ref={ref}
+    >
       <PillButton
+        tooltipPlacement={modal ? "bottom" : "top"}
         icon={<Settings />}
         open={open}
         onClick={() => setOpen(!open)}
@@ -295,14 +356,20 @@ const Options = ({ modal }) => {
   );
 };
 
-const Colors = () => {
+const Colors = ({
+  adaptiveMenuItemProps,
+  modal,
+}: ActionProps & { modal?: boolean }) => {
+  const trackEvent = useTrackEvent();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const [activeField, setActiveField] = useRecoilState(activeColorEntry);
 
   const onOpen = () => {
+    trackEvent("open_color_settings");
     setOpen(!open);
     setActiveField(ACTIVE_FIELD.GLOBAL);
+    adaptiveMenuItemProps?.closeOverflow?.();
   };
 
   useEffect(() => {
@@ -314,20 +381,24 @@ const Colors = () => {
   }, [Boolean(activeField)]);
 
   return (
-    <ActionDiv ref={ref}>
+    <ActionDiv
+      {...(getStringAndNumberProps(adaptiveMenuItemProps) || {})}
+      ref={ref}
+    >
       <PillButton
-        icon={<ColorLens />}
-        open={open}
-        onClick={onOpen}
-        highlight={open}
-        title={"Color settings"}
         data-cy="action-color-settings"
+        highlight={open}
+        icon={<ColorLens />}
+        onClick={onOpen}
+        open={open}
+        title={"Color settings"}
+        tooltipPlacement={modal ? "bottom" : "top"}
       />
     </ActionDiv>
   );
 };
 
-const Hidden = () => {
+const Hidden = ({ modal }: { modal?: boolean }) => {
   const [hiddenObjects, setHiddenObjects] = useRecoilState(fos.hiddenLabels);
   const count = Object.keys(hiddenObjects).length;
 
@@ -338,9 +409,11 @@ const Hidden = () => {
   return (
     <PillButton
       icon={<VisibilityOff />}
+      tooltipPlacement={modal ? "bottom" : "top"}
       open={true}
       onClick={() => setHiddenObjects({})}
       highlight={true}
+      style={modal ? { padding: "0 0.5em" } : {}}
       text={`${count}`}
       title={"Clear hidden labels"}
       data-cy="action-clear-hidden-labels"
@@ -348,7 +421,7 @@ const Hidden = () => {
   );
 };
 
-const SaveFilters = () => {
+const SaveFilters = ({ adaptiveMenuItemProps }: ActionProps) => {
   const loading = useRecoilValue(fos.savingFilters);
 
   const saveFilters = useRecoilCallback(
@@ -405,7 +478,7 @@ const SaveFilters = () => {
   );
 
   return shouldToggleBookMarkIconOn ? (
-    <ActionDiv>
+    <ActionDiv {...(getStringAndNumberProps(adaptiveMenuItemProps) || {})}>
       <PillButton
         open={false}
         highlight={true}
@@ -419,9 +492,27 @@ const SaveFilters = () => {
   ) : null;
 };
 
-const ToggleSidebar: React.FC<{
-  modal: boolean;
-}> = React.forwardRef(({ modal }, ref) => {
+const ToggleModalFullScreen = () => {
+  const [fullScreen, setFullScreen] = useRecoilState(fos.fullscreen);
+
+  return (
+    <PillButton
+      icon={fullScreen ? <FullscreenExit /> : <Fullscreen />}
+      open={fullScreen}
+      highlight={fullScreen}
+      onClick={() => setFullScreen(!fullScreen)}
+      tooltipPlacement="bottom"
+      title={fullScreen ? "Exit fullscreen (f)" : "Enter fullscreen (f)"}
+      data-cy="action-toggle-fullscreen"
+    />
+  );
+};
+
+const ToggleSidebar: React.FC<
+  ActionProps & {
+    modal: boolean;
+  }
+> = React.forwardRef(({ modal, adaptiveMenuItemProps }, ref) => {
   const [visible, setVisible] = useRecoilState(fos.sidebarVisible(modal));
 
   return (
@@ -430,6 +521,7 @@ const ToggleSidebar: React.FC<{
         setVisible(!visible);
       }}
       title={`${visible ? "Hide" : "Show"} sidebar`}
+      tooltipPlacement={modal ? "bottom" : "top"}
       open={visible}
       icon={
         visible ? (
@@ -447,33 +539,69 @@ const ToggleSidebar: React.FC<{
       highlight={!visible}
       ref={ref}
       data-cy="action-toggle-sidebar"
+      {...(getStringAndNumberProps(adaptiveMenuItemProps) || {})}
     />
   );
 });
 
-const ActionsRowDiv = styled.div`
-  position: relative;
+const ModalActionsRowContainer = styled.div`
+  z-index: 100001;
+  position: fixed;
+  right: 3em;
+  top: 0.16em;
   display: flex;
-  justify-content: ltr;
   row-gap: 0.5rem;
   column-gap: 0.5rem;
   align-items: center;
-  overflow-x: hidden;
+  opacity: 0.8;
+  transition: opacity 0.1s ease-in;
+
   &:hover {
-    overflow-x: auto;
+    opacity: 1;
+    transition: opacity 0.1s ease-out;
+  }
+
+  svg {
+    font-size: 18px;
+  }
+
+  > div {
+    max-height: 24px;
+
+    > div:first-child {
+      max-height: 24px;
+    }
   }
 `;
 
-export const BrowseOperations = () => {
+const DraggableHandleIconContainer = styled.div`
+  cursor: grab;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+
+  &:active {
+    cursor: grabbing;
+  }
+`;
+
+export const BrowseOperations = ({
+  adaptiveMenuItemProps,
+  modal,
+}: ActionProps & { modal?: boolean }) => {
   const browser = useOperatorBrowser();
   return (
-    <ActionDiv>
+    <ActionDiv {...(getStringAndNumberProps(adaptiveMenuItemProps) || {})}>
       <PillButton
         open={false}
         highlight={true}
         icon={<List />}
-        onClick={() => browser.toggle()}
+        onClick={() => {
+          browser.toggle();
+          adaptiveMenuItemProps?.closeOverflow?.();
+        }}
         title={"Browse operations"}
+        tooltipPlacement={modal ? "bottom" : "top"}
         data-cy="action-browse-operations"
       />
     </ActionDiv>
@@ -481,79 +609,175 @@ export const BrowseOperations = () => {
 };
 
 export const GridActionsRow = () => {
-  const actionsRowDivRef = useRef<HTMLDivElement>();
-
-  useEffect(() => {
-    const actionsRowDivElem = actionsRowDivRef.current;
-    if (actionsRowDivElem) {
-      const handleWheel = (e) => {
-        const leftEnd = actionsRowDivElem.offsetWidth;
-        const rightEnd = actionsRowDivElem.scrollWidth;
-        const scrollLeft = actionsRowDivElem.scrollLeft;
-        const leftScrolledEnd = leftEnd + scrollLeft;
-        const allowLeftScroll = leftScrolledEnd === leftEnd;
-        const allowRightScroll = leftScrolledEnd === rightEnd;
-
-        if (
-          e.deltaY == 0 ||
-          (e.deltaY < 0 && allowLeftScroll) ||
-          (e.deltaY > 0 && allowRightScroll)
-        )
-          return;
-
-        e.preventDefault();
-        actionsRowDivElem.scrollLeft = actionsRowDivElem.scrollLeft + e.deltaY;
-      };
-      actionsRowDivElem.addEventListener("wheel", handleWheel);
-      return () => actionsRowDivElem.removeEventListener("wheel", handleWheel);
-    }
-  }, []);
+  const { placements: primaryPlacements } = useOperatorPlacements(
+    types.Places.SAMPLES_GRID_ACTIONS
+  );
+  const { placements: secondaryPlacements } = useOperatorPlacements(
+    types.Places.SAMPLES_GRID_SECONDARY_ACTIONS
+  );
+  const initialItems = useMemo(() => {
+    return [
+      {
+        id: "toggle-sidebar",
+        Component: (props) => {
+          return <ToggleSidebar modal={false} adaptiveMenuItemProps={props} />;
+        },
+        priority: 1, // always show this first
+      },
+      {
+        id: "colors",
+        Component: (props) => {
+          return <Colors adaptiveMenuItemProps={props} />;
+        },
+      },
+      {
+        id: "tag",
+        Component: (props) => {
+          return <Tag modal={false} adaptiveMenuItemProps={props} />;
+        },
+      },
+      {
+        id: "patches",
+        Component: (props) => {
+          return <Patches adaptiveMenuItemProps={props} />;
+        },
+      },
+      {
+        id: "similarity",
+        Component: (props) => {
+          return <Similarity modal={false} adaptiveMenuItemProps={props} />;
+        },
+      },
+      {
+        id: "save-filters",
+        Component: (props) => {
+          return <SaveFilters adaptiveMenuItemProps={props} />;
+        },
+      },
+      {
+        id: "selected",
+        Component: (props) => {
+          return <Selected modal={false} adaptiveMenuItemProps={props} />;
+        },
+      },
+      {
+        id: "dynamic-group-action",
+        Component: (props) => {
+          return <DynamicGroupAction adaptiveMenuItemProps={props} />;
+        },
+      },
+      {
+        id: "browse-operations",
+        Component: (props) => {
+          return <BrowseOperations adaptiveMenuItemProps={props} />;
+        },
+      },
+      {
+        id: "options",
+        Component: (props) => {
+          return <Options modal={false} adaptiveMenuItemProps={props} />;
+        },
+      },
+      ...primaryPlacements.map((placement) => {
+        return {
+          id: placement?.operator?.uri,
+          Component: (props) => {
+            return (
+              <OperatorPlacementWithErrorBoundary
+                place={types.Places.SAMPLES_GRID_ACTIONS}
+                adaptiveMenuItemProps={props}
+                {...placement}
+              />
+            );
+          },
+        };
+      }),
+      ...secondaryPlacements.map((placement) => {
+        return {
+          id: placement?.operator?.uri,
+          Component: (props) => {
+            return (
+              <OperatorPlacementWithErrorBoundary
+                place={types.Places.SAMPLES_GRID_SECONDARY_ACTIONS}
+                adaptiveMenuItemProps={props}
+                {...placement}
+              />
+            );
+          },
+        };
+      }),
+    ];
+  }, [primaryPlacements, secondaryPlacements]);
+  const { orderedItems, setOrder } = useItemsWithOrderPersistence(
+    initialItems,
+    "grid-actions-row"
+  );
 
   return (
-    <ActionsRowDiv
-      className={`${scrollable} ${scrollableSm}`}
-      ref={actionsRowDivRef}
-    >
-      <ToggleSidebar modal={false} />
-      <Colors />
-      <Tag modal={false} />
-      <Patches />
-      <Similarity modal={false} />
-      <SaveFilters />
-      <Selected modal={false} />
-      <DynamicGroupAction />
-      <BrowseOperations />
-      <Options modal={false} />
-      <OperatorPlacements place={types.Places.SAMPLES_GRID_ACTIONS} />
-      <OperatorPlacements place={types.Places.SAMPLES_GRID_SECONDARY_ACTIONS} />
-    </ActionsRowDiv>
+    <Box sx={{ width: "100%", minWidth: 100 }}>
+      <AdaptiveMenu
+        id="grid-actions-row"
+        items={orderedItems}
+        onOrderChange={(items) => {
+          setOrder(items);
+        }}
+      />
+    </Box>
   );
 };
 
-export const ModalActionsRow = ({
-  lookerRef,
-  isGroup,
-}: {
-  lookerRef?: MutableRefObject<fos.Lookers | undefined>;
-  isGroup?: boolean;
-}) => {
+const DragActionsRow = () => {
   return (
-    <ActionsRowDiv
-      style={{
-        justifyContent: "rtl",
-        right: 0,
+    <DraggableHandleIconContainer className={MODAL_ACTION_BAR_HANDLE_CLASS}>
+      <DragIndicatorIcon />
+    </DraggableHandleIconContainer>
+  );
+};
+
+export const ModalActionsRow = () => {
+  const { activeLookerRef } = useModalContext();
+
+  const isActualGroup = useRecoilValue(fos.isGroup);
+  const isDynamicGroup = useRecoilValue(fos.isDynamicGroup);
+
+  const isGroup = useMemo(
+    () => isActualGroup || isDynamicGroup,
+    [isActualGroup, isDynamicGroup]
+  );
+
+  const [defaultXCoord, setDefaultXCoord] = fos.useBrowserStorage<number>(
+    "modal-actions-row-x-coord",
+    0,
+    false
+  );
+
+  return (
+    <Draggable
+      handle={`.${MODAL_ACTION_BAR_HANDLE_CLASS}`}
+      axis="x"
+      defaultPosition={{ x: defaultXCoord ?? 0, y: 0 }}
+      onDrag={(_e, { x }) => {
+        setDefaultXCoord(x);
       }}
     >
-      <Hidden />
-      <Selected modal={true} lookerRef={lookerRef} />
-      <Colors />
-      <Similarity modal={true} />
-      <Tag modal={true} lookerRef={lookerRef} />
-      <Options modal={true} />
-      {isGroup && <GroupMediaVisibilityContainer modal={true} />}
-      <BrowseOperations />
-      <OperatorPlacements place={types.Places.SAMPLES_VIEWER_ACTIONS} />
-      <ToggleSidebar modal={true} />
-    </ActionsRowDiv>
+      <ModalActionsRowContainer>
+        <DragActionsRow />
+        <Hidden modal />
+        <Selected modal={true} lookerRef={activeLookerRef} />
+        <Colors modal />
+        <Similarity modal={true} />
+        <Tag modal={true} lookerRef={activeLookerRef} />
+        <Options modal={true} />
+        {isGroup && <GroupMediaVisibilityContainer modal={true} />}
+        <BrowseOperations modal />
+        <OperatorPlacements modal place={types.Places.SAMPLES_VIEWER_ACTIONS} />
+        <ToggleModalFullScreen />
+        <ToggleSidebar modal={true} />
+      </ModalActionsRowContainer>
+    </Draggable>
   );
+};
+
+type ActionProps = {
+  adaptiveMenuItemProps?: AdaptiveMenuItemComponentPropsType;
 };

@@ -1,17 +1,12 @@
 """
 Utilities for working with `YouTube <https://youtube.com>`.
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
 import importlib
-
-try:
-    from importlib import metadata
-except ImportError:
-    import importlib_metadata as metadata
-
+from importlib import metadata
 import itertools
 import logging
 import multiprocessing.dummy

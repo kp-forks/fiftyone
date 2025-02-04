@@ -1,4 +1,3 @@
-import { Field } from "@fiftyone/utilities";
 import styled from "styled-components";
 
 export const InputDiv = styled.div`
@@ -26,16 +25,16 @@ export const InputDiv = styled.div`
   }
 `;
 
-export const FilterInputDiv = styled.div<{ modal: boolean }>`
+export const FilterInputDiv = styled.div`
+  background: ${({ theme }) => theme.background.mediaSpace};
   box-sizing: border-box;
   cursor: pointer;
   font-weight: bold;
   user-select: none;
-  padding-top: 2px;
-  margin: 0 1rem 0.25rem 1rem;
+  padding 2px 1rem 0.25rem 1rem;
 
   display: flex;
-  justify-content: ${({ modal }) => (modal ? "flex-start" : "space-between")};
+  justify-content: space-between;
 
   & > input {
     color: ${({ theme }) => theme.text.secondary};
@@ -52,15 +51,3 @@ export const FilterInputDiv = styled.div<{ modal: boolean }>`
     padding: 3px;
   }
 `;
-
-export const makePseudoField = (path: string): Field => ({
-  name: path.split(".").slice(1).join("."),
-  ftype: "",
-  subfield: null,
-  description: "",
-  info: null,
-  fields: {},
-  dbField: null,
-  path: path,
-  embeddedDocType: null,
-});

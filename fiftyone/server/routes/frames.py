@@ -1,7 +1,7 @@
 """
 FiftyOne Server /frames route
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
@@ -40,10 +40,9 @@ class Frames(HTTPEndpoint):
         support = None if stages else [start_frame, end_frame]
 
         def run(view):
-            view = fov.make_optimized_select_view(view, sample_id)
-
-            if view.media_type == fom.GROUP and group_slice is not None:
-                view.group_slice = group_slice
+            view = fov.make_optimized_select_view(
+                view, sample_id, flatten=True
+            )
 
             if not support:
                 view = view.set_field(

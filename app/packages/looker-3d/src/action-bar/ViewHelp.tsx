@@ -1,5 +1,5 @@
 import { HelpIcon } from "@fiftyone/components";
-import { useHelpPanel } from "@fiftyone/state";
+import type { useHelpPanel } from "@fiftyone/state";
 import { ACTION_VIEW_HELP } from "../constants";
 import { ActionItem } from "../containers";
 
@@ -20,6 +20,11 @@ export const LOOKER3D_HELP_ITEMS = [
   { shortcut: "B", title: "Background", detail: "Toggle background" },
   { shortcut: "C", title: "Controls", detail: "Toggle controls" },
   { shortcut: "G", title: "Grid", detail: "Toggle grid" },
+  {
+    shortcut: "Z",
+    title: "Crop",
+    detail: "Crop and set camera look-at on visible labels",
+  },
   { shortcut: "F", title: "Full-screen", detail: "Toggle full-screen" },
   { shortcut: "J", title: "Json ", detail: "Toggle JSON view" },
   { shortcut: "I", title: "FO3D ", detail: "Toggle FO3D JSON view" },

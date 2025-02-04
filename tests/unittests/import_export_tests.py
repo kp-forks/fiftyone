@@ -1,7 +1,7 @@
 """
 FiftyOne import/export-related unit tests.
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
@@ -1317,6 +1317,65 @@ class ImageDetectionDatasetTests(ImageDatasetTests):
             {c["id"] for c in categories2},
         )
 
+        # Alphabetized 1-based categories by default
+
+        export_dir = self._new_dir()
+
+        dataset.export(
+            export_dir=export_dir,
+            dataset_type=fo.types.COCODetectionDataset,
+        )
+
+        dataset2 = fo.Dataset.from_dir(
+            dataset_dir=export_dir,
+            dataset_type=fo.types.COCODetectionDataset,
+            label_types="detections",
+            label_field="predictions",
+        )
+        categories2 = dataset2.info["categories"]
+
+        self.assertListEqual([c["id"] for c in categories2], [1, 2])
+        self.assertListEqual([c["name"] for c in categories2], ["cat", "dog"])
+
+        # Only load matching classes
+
+        export_dir = self._new_dir()
+
+        dataset.export(
+            export_dir=export_dir,
+            dataset_type=fo.types.COCODetectionDataset,
+        )
+
+        dataset2 = fo.Dataset.from_dir(
+            dataset_dir=export_dir,
+            dataset_type=fo.types.COCODetectionDataset,
+            label_types="detections",
+            label_field="predictions",
+            classes="cat",
+            only_matching=False,
+        )
+
+        self.assertEqual(len(dataset2), 2)
+        self.assertListEqual(
+            dataset2.distinct("predictions.detections.label"),
+            ["cat", "dog"],
+        )
+
+        dataset3 = fo.Dataset.from_dir(
+            dataset_dir=export_dir,
+            dataset_type=fo.types.COCODetectionDataset,
+            label_types="detections",
+            label_field="predictions",
+            classes="cat",
+            only_matching=True,
+        )
+
+        self.assertEqual(len(dataset3), 2)
+        self.assertListEqual(
+            dataset3.distinct("predictions.detections.label"),
+            ["cat"],
+        )
+
     @drop_datasets
     def test_voc_detection_dataset(self):
         dataset = self._make_dataset()
@@ -1758,16 +1817,19 @@ class ImageDetectionDatasetTests(ImageDatasetTests):
     @drop_datasets
     def test_add_coco_labels(self):
         dataset = self._make_dataset()
+
         classes = dataset.distinct("predictions.detections.label")
+        categories = [{"id": i, "name": l} for i, l in enumerate(classes, 1)]
 
         export_dir = self._new_dir()
         dataset.export(
             export_dir=export_dir,
             dataset_type=fo.types.COCODetectionDataset,
+            categories=categories,
         )
         coco_labels_path = os.path.join(export_dir, "labels.json")
 
-        fouc.add_coco_labels(dataset, "coco", coco_labels_path, classes)
+        fouc.add_coco_labels(dataset, "coco", coco_labels_path, categories)
         self.assertEqual(
             dataset.count_values("predictions.detections.label"),
             dataset.count_values("coco.detections.label"),
@@ -2154,6 +2216,115 @@ class ImageSegmentationDatasetTests(ImageDatasetTests):
         self.assertListEqual(
             dataset.values("segmentations.mask_path"),
             dataset2.values("segmentations.mask_path"),
+        )
+
+    @drop_datasets
+    def test_instance_segmentation_fiftyone_dataset(self):
+        self._test_instance_segmentation_fiftyone_dataset(
+            fo.types.FiftyOneDataset
+        )
+
+    @drop_datasets
+    def test_instance_segmentation_legacy_fiftyone_dataset(self):
+        self._test_instance_segmentation_fiftyone_dataset(
+            fo.types.LegacyFiftyOneDataset
+        )
+
+    def _test_instance_segmentation_fiftyone_dataset(self, dataset_type):
+        dataset = self._make_dataset()
+
+        # In-database instance segmentations
+
+        export_dir = self._new_dir()
+
+        dataset.export(
+            export_dir=export_dir,
+            dataset_type=dataset_type,
+        )
+
+        dataset2 = fo.Dataset.from_dir(
+            dataset_dir=export_dir,
+            dataset_type=dataset_type,
+        )
+
+        self.assertEqual(len(dataset), len(dataset2))
+        self.assertEqual(dataset.count("detections.detections.mask_path"), 0)
+        self.assertEqual(dataset2.count("detections.detections.mask_path"), 0)
+        self.assertEqual(
+            dataset.count("detections.detections.mask"),
+            dataset2.count("detections.detections.mask"),
+        )
+
+        # Convert to on-disk instance segmentations
+
+        segmentations_dir = self._new_dir()
+
+        foul.export_segmentations(dataset, "detections", segmentations_dir)
+
+        self.assertEqual(dataset.count("detections.detections.mask"), 0)
+        for mask_path in dataset.values("detections.detections[].mask_path"):
+            if mask_path is not None:
+                self.assertTrue(mask_path.startswith(segmentations_dir))
+
+        # On-disk instance segmentations
+
+        export_dir = self._new_dir()
+        field_dir = os.path.join(export_dir, "fields", "detections.detections")
+
+        dataset.export(
+            export_dir=export_dir,
+            dataset_type=dataset_type,
+        )
+
+        dataset2 = fo.Dataset.from_dir(
+            dataset_dir=export_dir,
+            dataset_type=dataset_type,
+        )
+
+        self.assertEqual(len(dataset), len(dataset2))
+        self.assertEqual(dataset2.count("detections.detections.mask"), 0)
+        self.assertEqual(
+            dataset.count("detections.detections.mask_path"),
+            dataset2.count("detections.detections.mask_path"),
+        )
+
+        for mask_path in dataset2.values("detections.detections[].mask_path"):
+            if mask_path is not None:
+                self.assertTrue(mask_path.startswith(field_dir))
+
+        # On-disk instance segmentations (don't export media)
+
+        export_dir = self._new_dir()
+
+        dataset.export(
+            export_dir=export_dir,
+            dataset_type=dataset_type,
+            export_media=False,
+        )
+
+        dataset2 = fo.Dataset.from_dir(
+            dataset_dir=export_dir,
+            dataset_type=dataset_type,
+        )
+
+        self.assertEqual(len(dataset), len(dataset2))
+        self.assertListEqual(
+            dataset.values("filepath"),
+            dataset2.values("filepath"),
+        )
+        self.assertListEqual(
+            dataset.values("detections.detections[].mask_path"),
+            dataset2.values("detections.detections[].mask_path"),
+        )
+
+        # Convert to in-database instance segmentations
+
+        foul.import_segmentations(dataset2, "detections")
+
+        self.assertEqual(dataset2.count("detections.detections.mask_path"), 0)
+        self.assertEqual(
+            dataset2.count("detections.detections.mask"),
+            dataset.count("detections.detections.mask_path"),
         )
 
 
@@ -2894,6 +3065,7 @@ class MultitaskImageDatasetTests(ImageDatasetTests):
     @drop_datasets
     def test_fiftyone_dataset(self):
         dataset = self._make_dataset()
+        dataset.reload()
 
         # Standard format
 
@@ -3267,6 +3439,46 @@ class MultitaskImageDatasetTests(ImageDatasetTests):
         self.assertEqual(dataset2.description, description)
         self.assertListEqual(dataset2.tags, tags)
 
+        # Created at/last modified at
+
+        export_dir = self._new_dir()
+
+        dataset.export(
+            export_dir=export_dir,
+            dataset_type=fo.types.FiftyOneDataset,
+        )
+
+        dataset2 = fo.Dataset.from_dir(
+            dataset_dir=export_dir,
+            dataset_type=fo.types.FiftyOneDataset,
+        )
+
+        field_created_at1 = [
+            f.created_at for f in dataset.get_field_schema().values()
+        ]
+        created_at1 = dataset.values("created_at")
+        last_modified_at1 = dataset.values("last_modified_at")
+
+        field_created_at2 = [
+            f.created_at for f in dataset2.get_field_schema().values()
+        ]
+        created_at2 = dataset2.values("created_at")
+        last_modified_at2 = dataset2.values("last_modified_at")
+
+        self.assertTrue(
+            all(
+                f1 < f2 for f1, f2 in zip(field_created_at1, field_created_at2)
+            )
+        )
+        self.assertTrue(
+            all(c1 < c2 for c1, c2 in zip(created_at1, created_at2))
+        )
+        self.assertTrue(
+            all(
+                m1 < m2 for m1, m2 in zip(last_modified_at1, last_modified_at2)
+            )
+        )
+
     @skipwindows
     @drop_datasets
     def test_legacy_fiftyone_dataset(self):
@@ -3589,6 +3801,47 @@ class MultitaskImageDatasetTests(ImageDatasetTests):
 
         self.assertEqual(dataset2.description, description)
         self.assertListEqual(dataset2.tags, tags)
+
+        # Created at/last modified at
+
+        export_dir = self._new_dir()
+
+        dataset.export(
+            export_dir=export_dir,
+            dataset_type=fo.types.LegacyFiftyOneDataset,
+        )
+
+        dataset2 = fo.Dataset.from_dir(
+            dataset_dir=export_dir,
+            dataset_type=fo.types.LegacyFiftyOneDataset,
+        )
+
+        field_created_at1 = [
+            f.created_at for f in dataset.get_field_schema().values()
+        ]
+        created_at1 = dataset.values("created_at")
+        last_modified_at1 = dataset.values("last_modified_at")
+
+        field_created_at2 = [
+            f.created_at for f in dataset2.get_field_schema().values()
+        ]
+        created_at2 = dataset2.values("created_at")
+        last_modified_at2 = dataset2.values("last_modified_at")
+
+        self.assertTrue(
+            all(
+                f1 < f2 for f1, f2 in zip(field_created_at1, field_created_at2)
+            )
+        )
+
+        self.assertTrue(
+            all(c1 < c2 for c1, c2 in zip(created_at1, created_at2))
+        )
+        self.assertTrue(
+            all(
+                m1 < m2 for m1, m2 in zip(last_modified_at1, last_modified_at2)
+            )
+        )
 
 
 class OpenLABELImageDatasetTests(ImageDatasetTests):
@@ -4623,6 +4876,99 @@ class MultitaskVideoDatasetTests(VideoDatasetTests):
 
         # data/_videos/<filename>
         self.assertEqual(len(relpath.split(os.path.sep)), 3)
+
+    @drop_datasets
+    def test_fiftyone_dataset(self):
+        dataset = self._make_dataset()
+
+        # Created at/last modified at
+
+        export_dir = self._new_dir()
+
+        dataset.reload()
+        dataset.export(
+            export_dir=export_dir,
+            dataset_type=fo.types.FiftyOneDataset,
+        )
+
+        dataset2 = fo.Dataset.from_dir(
+            dataset_dir=export_dir,
+            dataset_type=fo.types.FiftyOneDataset,
+        )
+
+        field_created_at1 = [
+            f.created_at for f in dataset.get_frame_field_schema().values()
+        ]
+        created_at1 = dataset.values("frames.created_at", unwind=True)
+        last_modified_at1 = dataset.values("last_modified_at", unwind=True)
+
+        field_created_at2 = [
+            f.created_at for f in dataset2.get_frame_field_schema().values()
+        ]
+        created_at2 = dataset2.values("frames.created_at", unwind=True)
+        last_modified_at2 = dataset2.values(
+            "frames.last_modified_at", unwind=True
+        )
+
+        self.assertTrue(
+            all(
+                f1 < f2 for f1, f2 in zip(field_created_at1, field_created_at2)
+            )
+        )
+        self.assertTrue(
+            all(c1 < c2 for c1, c2 in zip(created_at1, created_at2))
+        )
+        self.assertTrue(
+            all(
+                m1 < m2 for m1, m2 in zip(last_modified_at1, last_modified_at2)
+            )
+        )
+
+    @drop_datasets
+    def test_legacy_fiftyone_dataset(self):
+        dataset = self._make_dataset()
+
+        # Created at/last modified at
+
+        export_dir = self._new_dir()
+
+        dataset.export(
+            export_dir=export_dir,
+            dataset_type=fo.types.LegacyFiftyOneDataset,
+        )
+
+        dataset2 = fo.Dataset.from_dir(
+            dataset_dir=export_dir,
+            dataset_type=fo.types.LegacyFiftyOneDataset,
+        )
+
+        field_created_at1 = [
+            f.created_at for f in dataset.get_frame_field_schema().values()
+        ]
+        created_at1 = dataset.values("frames.created_at", unwind=True)
+        last_modified_at1 = dataset.values("last_modified_at", unwind=True)
+
+        field_created_at2 = [
+            f.created_at for f in dataset2.get_frame_field_schema().values()
+        ]
+        created_at2 = dataset2.values("frames.created_at", unwind=True)
+        last_modified_at2 = dataset2.values(
+            "frames.last_modified_at", unwind=True
+        )
+
+        self.assertTrue(
+            all(
+                f1 < f2 for f1, f2 in zip(field_created_at1, field_created_at2)
+            )
+        )
+        self.assertTrue(
+            all(c1 < c2 for c1, c2 in zip(created_at1, created_at2))
+        )
+        self.assertTrue(
+            all(
+                m1 < m2 for m1, m2 in zip(last_modified_at1, last_modified_at2)
+            )
+        )
 
 
 class UnlabeledMediaDatasetTests(ImageDatasetTests):

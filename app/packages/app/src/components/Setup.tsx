@@ -2,12 +2,12 @@ import {
   DocsLink,
   GitHubLink,
   Header,
-  SlackLink,
+  DiscordLink,
   iconContainer,
   useTheme,
 } from "@fiftyone/components";
 import { isNotebook } from "@fiftyone/state";
-import { isElectron, scrollbarStyles } from "@fiftyone/utilities";
+import { styles } from "@fiftyone/utilities";
 import { animated, useSpring } from "@react-spring/web";
 import React, { useState } from "react";
 import { useRecoilValue } from "recoil";
@@ -40,16 +40,12 @@ const Code = styled.pre`
   border-radius: 3px;
   overflow: auto;
 
-  ${scrollbarStyles}
+  ${styles.scrollbarStyles}
 `;
 
 const port = (() => {
-  if (isElectron()) {
-    return parseInt(process.env.FIFTYONE_SERVER_PORT) || 5151;
-  }
-
   if (typeof window !== "undefined" && window.location.port !== undefined) {
-    return parseInt(window.location.port);
+    return Number.parseInt(window.location.port);
   }
 
   return "";
@@ -83,7 +79,7 @@ session = fo.launch_app(dataset, port=${port})
 };
 
 const RemoteInstructions = () => {
-  const bashSnippet = `# Option 1: Configure port forwaring
+  const bashSnippet = `# Option 1: Configure port forwarding
 # Then open http://localhost:${port} in your web browser
 ssh -N -L ${port}:127.0.0.1:XXXX [<username>@]<hostname>
 
@@ -129,7 +125,7 @@ const SetupWrapper = styled.div`
   background: ${({ theme }) => theme.background.level2};
   border-top: 1px solid ${({ theme }) => theme.primary.plainBorder};
 
-  ${scrollbarStyles};
+  ${styles.scrollbarStyles}
 `;
 
 const SetupContainer = styled.div`
@@ -194,7 +190,7 @@ const Setup = () => {
     <div data-cy="setup-page">
       <Header title={"FiftyOne"}>
         <div className={iconContainer} style={{ flex: 1 }}>
-          <SlackLink />
+          <DiscordLink />
           <GitHubLink />
           <DocsLink />
         </div>

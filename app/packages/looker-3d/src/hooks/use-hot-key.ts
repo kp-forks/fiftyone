@@ -14,20 +14,44 @@ export const useHotkey = (
     snapshot: recoil.Snapshot;
   }) => void,
   deps: readonly unknown[] = [],
-  useTransaction = true
+  props: {
+    useTransaction?: boolean;
+    ignoreModifiers?: boolean;
+  } = { useTransaction: true, ignoreModifiers: true }
 ) => {
-  const cbAsRecoilTransaction = useTransaction
+  if (typeof props.useTransaction === "undefined") {
+    props.useTransaction = true;
+  }
+  if (typeof props.ignoreModifiers === "undefined") {
+    props.ignoreModifiers = true;
+  }
+
+  const { useTransaction, ignoreModifiers } = props;
+
+  const decoratedCb = useTransaction
     ? useRecoilTransaction_UNSTABLE((ctx) => () => cb(ctx), deps)
     : recoil.useRecoilCallback((ctx) => () => cb(ctx), deps);
 
   const handle = useCallback(
     (e: KeyboardEventUnionType) => {
-      const shouldIgnore = e.target.tagName.toLowerCase() === "input";
-      if (!shouldIgnore && e.code === keyCode) {
-        cbAsRecoilTransaction();
+      // ignore if modifier keys are pressed
+      if (
+        ignoreModifiers &&
+        (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey)
+      ) {
+        return;
+      }
+
+      const active = document.activeElement;
+      if (active?.tagName === "INPUT") {
+        return;
+      }
+
+      if (e.code === keyCode) {
+        decoratedCb();
       }
     },
-    [cbAsRecoilTransaction, keyCode]
+    [decoratedCb, keyCode]
   );
 
   useEffect(() => {

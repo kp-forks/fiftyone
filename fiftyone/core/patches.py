@@ -1,7 +1,7 @@
 """
 Patches views.
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
@@ -37,13 +37,12 @@ class _PatchView(fos.SampleView):
         return ObjectId(self._doc.frame_id)
 
     def _save(self, deferred=False):
-        if deferred:
-            raise NotImplementedError(
-                "Patches views do not support save contexts"
-            )
+        sample_ops, frame_ops = super()._save(deferred=deferred)
 
-        super()._save(deferred=deferred)
-        self._view._sync_source_sample(self)
+        if not deferred:
+            self._view._sync_source_sample(self)
+
+        return sample_ops, frame_ops
 
 
 class PatchView(_PatchView):
@@ -87,6 +86,15 @@ class EvaluationPatchView(_PatchView):
 
 
 class _PatchesView(fov.DatasetView):
+    __slots__ = (
+        "_source_collection",
+        "_patches_stage",
+        "_patches_dataset",
+        "__stages",
+        "__media_type",
+        "__name",
+    )
+
     def __init__(
         self,
         source_collection,
@@ -231,7 +239,7 @@ class _PatchesView(fov.DatasetView):
         # The `set_values()` operation could change the contents of this view,
         # so we first record the sample IDs that need to be synced
         if must_sync and self._stages:
-            ids = self.values("_id")
+            ids = self.values("id")
         else:
             ids = None
 
@@ -284,7 +292,7 @@ class _PatchesView(fov.DatasetView):
         else:
             fields = [l for l in fields if l in self._label_fields]
 
-        self._sync_source_root(fields)
+        self._sync_source(fields=fields)
 
     def keep(self):
         """Deletes all patches that are **not** in this view from the
@@ -299,7 +307,7 @@ class _PatchesView(fov.DatasetView):
 
         # The `keep()` operation below will delete patches, so we must sync
         # deletions to the source dataset first
-        self._sync_source_root(self._label_fields, update=False, delete=True)
+        self._sync_source(update=False, delete=True)
 
         super().keep()
 
@@ -354,24 +362,47 @@ class _PatchesView(fov.DatasetView):
 
         self._source_collection._set_labels(field, [sample_id], [doc])
 
-    def _sync_source_field(self, field, ids=None):
+    def _sync_source(self, fields=None, ids=None, update=True, delete=False):
+        if fields is not None:
+            fields = [f for f in fields if f in self._label_fields]
+            if not fields:
+                return
+        else:
+            fields = self._label_fields
+
+        for field in fields:
+            self._sync_source_field(
+                field, ids=ids, update=update, delete=delete
+            )
+
+    def _sync_source_field(self, field, ids=None, update=True, delete=False):
         if field not in self._label_fields:
             return
 
         _, label_path = self._get_label_field_path(field)
 
         if ids is not None:
-            view = self._patches_dataset.mongo(
-                [{"$match": {"_id": {"$in": ids}}}]
-            )
+            view = self._patches_dataset.select(ids)
         else:
             view = self._patches_dataset
 
-        sample_ids, docs = view.aggregate(
-            [foa.Values(self._id_field), foa.Values(label_path, _raw=True)]
-        )
+        if update:
+            sample_ids, docs = view.aggregate(
+                [foa.Values(self._id_field), foa.Values(label_path, _raw=True)]
+            )
 
-        self._source_collection._set_labels(field, sample_ids, docs)
+            self._source_collection._set_labels(field, sample_ids, docs)
+
+        if delete:
+            label_id_path = label_path + ".id"
+            all_ids = self._patches_dataset.values(label_id_path, unwind=True)
+            self_ids = self.values(label_id_path, unwind=True)
+            del_ids = set(all_ids) - set(self_ids)
+
+            if del_ids:
+                self._source_collection._delete_labels(
+                    ids=del_ids, fields=field
+                )
 
     def _sync_source_field_schema(self, path):
         root = path.split(".", 1)[0]
@@ -393,37 +424,6 @@ class _PatchesView(fov.DatasetView):
 
         if self._source_collection._is_generated:
             self._source_collection._sync_source_field_schema(dst_path)
-
-    def _sync_source_root(self, fields, update=True, delete=False):
-        for field in fields:
-            self._sync_source_root_field(field, update=update, delete=delete)
-
-    def _sync_source_root_field(self, field, update=True, delete=False):
-        if field not in self._label_fields:
-            return
-
-        _, label_id_path = self._get_label_field_path(field, "id")
-        label_path = label_id_path.rsplit(".", 1)[0]
-
-        if update:
-            sample_ids, docs = self._patches_dataset.aggregate(
-                [
-                    foa.Values(self._id_field),
-                    foa.Values(label_path, _raw=True),
-                ]
-            )
-
-            self._source_collection._set_labels(field, sample_ids, docs)
-
-        if delete:
-            all_ids = self._patches_dataset.values(label_id_path, unwind=True)
-            self_ids = self.values(label_id_path, unwind=True)
-            del_ids = set(all_ids) - set(self_ids)
-
-            if del_ids:
-                self._source_collection._delete_labels(
-                    ids=del_ids, fields=field
-                )
 
     def _sync_source_keep_fields(self):
         src_schema = self.get_field_schema()
@@ -453,6 +453,8 @@ class PatchesView(_PatchesView):
         patches_dataset: the :class:`fiftyone.core.dataset.Dataset` that serves
             the patches in this view
     """
+
+    __slots__ = ("_patches_field",)
 
     def __init__(
         self,
@@ -510,6 +512,8 @@ class EvaluationPatchesView(_PatchesView):
             the patches in this view
     """
 
+    __slots__ = ("_gt_field", "_pred_field")
+
     def __init__(
         self,
         source_collection,
@@ -558,6 +562,8 @@ def make_patches_dataset(
     other_fields=None,
     keep_label_lists=False,
     name=None,
+    persistent=False,
+    _generated=False,
 ):
     """Creates a dataset that contains one sample per object patch in the
     specified field of the collection.
@@ -586,6 +592,8 @@ def make_patches_dataset(
             fields of the same type as the input collection rather than using
             their single label variants
         name (None): a name for the dataset
+        persistent (False): whether the dataset should persist in the database
+            after the session terminates
 
     Returns:
         a :class:`fiftyone.core.dataset.Dataset`
@@ -606,7 +614,12 @@ def make_patches_dataset(
         sample_collection, field, keep_label_lists
     )
 
-    dataset = fod.Dataset(name=name, _patches=True, _frames=is_frame_patches)
+    dataset = fod.Dataset(
+        name=name,
+        persistent=persistent,
+        _patches=_generated,
+        _frames=is_frame_patches and _generated,
+    )
     dataset.media_type = fom.IMAGE
     dataset.add_sample_field("sample_id", fof.ObjectIdField)
     dataset.create_index("sample_id")
@@ -618,22 +631,16 @@ def make_patches_dataset(
         dataset.create_index([("sample_id", 1), ("frame_number", 1)])
 
     keys = field.split(".")
-    if len(keys) > 2:
-        raise ValueError(
-            f"Cannot create nested patches field of depth greater than 1: {field}"
-        )
-
     if len(keys) == 2:
-        parent = sample_collection.get_field(keys[0])
-        if not isinstance(parent, fof.EmbeddedDocumentField):
-            raise ValueError(
-                f"Cannot create nested patches field of parent: {parent.ftype}"
-            )
-
         dataset.add_sample_field(
             keys[0],
             fof.EmbeddedDocumentField,
             embedded_doc_type=foo.DynamicEmbeddedDocument,
+        )
+    elif len(keys) > 2:
+        raise ValueError(
+            "Cannot create patches from nested field '%s' of depth %d > 2"
+            % (field, len(keys))
         )
 
     dataset.add_sample_field(field, **foo.get_field_kwargs(patches_field))
@@ -671,7 +678,12 @@ def _get_patches_field(sample_collection, field_name, keep_label_lists):
 
 
 def make_evaluation_patches_dataset(
-    sample_collection, eval_key, other_fields=None, name=None
+    sample_collection,
+    eval_key,
+    other_fields=None,
+    name=None,
+    persistent=False,
+    _generated=False,
 ):
     """Creates a dataset based on the results of the evaluation with the given
     key that contains one sample for each true positive, false positive, and
@@ -720,6 +732,8 @@ def make_evaluation_patches_dataset(
             -   ``True`` to include all other fields
             -   ``None``/``False`` to include no other fields
         name (None): a name for the dataset
+        persistent (False): whether the dataset should persist in the database
+            after the session terminates
 
     Returns:
         a :class:`fiftyone.core.dataset.Dataset`
@@ -757,7 +771,12 @@ def make_evaluation_patches_dataset(
     _pred_field = sample_collection.get_field(pred_field)
 
     # Setup dataset with correct schema
-    dataset = fod.Dataset(name=name, _patches=True, _frames=is_frame_patches)
+    dataset = fod.Dataset(
+        name=name,
+        persistent=persistent,
+        _patches=_generated,
+        _frames=is_frame_patches and _generated,
+    )
     dataset.media_type = fom.IMAGE
     dataset.add_sample_field("sample_id", fof.ObjectIdField)
     dataset.create_index("sample_id")
@@ -852,6 +871,8 @@ def _make_patches_view(
         "filepath": True,
         "metadata": True,
         "tags": True,
+        "created_at": True,
+        "last_modified_at": True,
         field + "._cls": True,
         root: True,
     }

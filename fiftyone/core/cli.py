@@ -1,12 +1,12 @@
 """
 Definition of the `fiftyone` command-line interface (CLI).
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
+
 import argparse
-import warnings
 from collections import defaultdict
 from datetime import datetime
 import json
@@ -18,8 +18,6 @@ import textwrap
 
 import argcomplete
 from bson import ObjectId
-import humanize
-import pytz
 from tabulate import tabulate
 import webbrowser
 
@@ -123,9 +121,6 @@ class QuickstartCommand(Command):
 
         # Launch the quickstart as a remote session
         fiftyone quickstart --remote
-
-        # Launch the quickstart in a desktop App session
-        fiftyone quickstart --desktop
     """
 
     @staticmethod
@@ -159,12 +154,6 @@ class QuickstartCommand(Command):
             help="whether to launch a remote App session",
         )
         parser.add_argument(
-            "-a",
-            "--desktop",
-            action="store_true",
-            help="whether to launch a desktop App instance",
-        )
-        parser.add_argument(
             "-w",
             "--wait",
             metavar="WAIT",
@@ -179,15 +168,11 @@ class QuickstartCommand(Command):
 
     @staticmethod
     def execute(parser, args):
-        # If desktop wasn't explicitly requested, fallback to default
-        desktop = args.desktop or None
-
         _, session = fouq.quickstart(
             video=args.video,
             port=args.port,
             address=args.address,
             remote=args.remote,
-            desktop=desktop,
         )
 
         _watch_session(session, args.wait)
@@ -1169,9 +1154,6 @@ class AppLaunchCommand(Command):
         # Launch a remote App session
         fiftyone app launch ... --remote
 
-        # Launch a desktop App session
-        fiftyone app launch ... --desktop
-
         # Launch the App in the non-default browser
         fiftyone app launch ... --browser firefox
     """
@@ -1207,12 +1189,6 @@ class AppLaunchCommand(Command):
             help="whether to launch a remote App session",
         )
         parser.add_argument(
-            "-a",
-            "--desktop",
-            action="store_true",
-            help="whether to launch a desktop App instance",
-        )
-        parser.add_argument(
             "-b",
             "--browser",
             metavar="BROWSER",
@@ -1235,9 +1211,6 @@ class AppLaunchCommand(Command):
 
     @staticmethod
     def execute(parser, args):
-        # If desktop wasn't explicitly requested, fallback to default
-        desktop = args.desktop or None
-
         if args.name:
             dataset = fod.load_dataset(args.name)
         else:
@@ -1248,7 +1221,6 @@ class AppLaunchCommand(Command):
             port=args.port,
             address=args.address,
             remote=args.remote,
-            desktop=desktop,
             browser=args.browser,
         )
 
@@ -1305,9 +1277,6 @@ class AppViewCommand(Command):
 
         # View the dataset in a remote App session
         fiftyone app view ... --remote
-
-        # View the dataset using the desktop App
-        fiftyone app view ... --desktop
 
         # View a random subset of the data stored on disk in the App
         fiftyone app view ... --kwargs max_samples=50 shuffle=True
@@ -1392,12 +1361,6 @@ class AppViewCommand(Command):
             help="whether to launch a remote App session",
         )
         parser.add_argument(
-            "-a",
-            "--desktop",
-            action="store_true",
-            help="whether to launch a desktop App instance",
-        )
-        parser.add_argument(
             "-w",
             "--wait",
             metavar="WAIT",
@@ -1472,15 +1435,11 @@ class AppViewCommand(Command):
                 **kwargs,
             )
 
-        # If desktop wasn't explicitly requested, fallback to default
-        desktop = args.desktop or None
-
         session = fos.launch_app(
             dataset=dataset,
             port=args.port,
             address=args.address,
             remote=args.remote,
-            desktop=desktop,
         )
 
         _watch_session(session, args.wait)
@@ -1758,7 +1717,7 @@ class DatasetZooListCommand(Command):
         # List available datasets
         fiftyone zoo datasets list
 
-        # List available datasets (names only)
+        # List available dataset names
         fiftyone zoo datasets list --names-only
 
         # List downloaded datasets
@@ -1797,15 +1756,6 @@ class DatasetZooListCommand(Command):
             metavar="TAGS",
             help="only show datasets with the specified tag or list,of,tags",
         )
-        parser.add_argument(
-            "-b",
-            "--base-dir",
-            metavar="BASE_DIR",
-            help=(
-                "a custom base directory in which to search for downloaded "
-                "datasets"
-            ),
-        )
 
     @staticmethod
     def execute(parser, args):
@@ -1814,13 +1764,8 @@ class DatasetZooListCommand(Command):
         match_source = args.source
         match_tags = args.tags
 
-        all_datasets = fozd._get_zoo_datasets()
-        all_sources, default_source = fozd._get_zoo_dataset_sources()
-
-        base_dir = args.base_dir
-        downloaded_datasets = fozd.list_downloaded_zoo_datasets(
-            base_dir=base_dir
-        )
+        downloaded_datasets = fozd.list_downloaded_zoo_datasets()
+        all_datasets, all_sources, default_source = fozd._get_zoo_datasets()
 
         _print_zoo_dataset_list(
             downloaded_datasets,
@@ -1849,8 +1794,8 @@ def _print_zoo_dataset_list(
 
     available_datasets = defaultdict(dict)
     for source, datasets in all_datasets.items():
-        for name, zoo_dataset_cls in datasets.items():
-            available_datasets[name][source] = zoo_dataset_cls()
+        for name, zoo_dataset in datasets.items():
+            available_datasets[name][source] = zoo_dataset
 
     records = []
 
@@ -1865,9 +1810,9 @@ def _print_zoo_dataset_list(
             continue
 
         tags = None
-        for source, zoo_model in dataset_sources.items():
+        for source, zoo_dataset in dataset_sources.items():
             if tags is None or source == default_source:
-                tags = zoo_model.tags
+                tags = zoo_dataset.tags
 
         if (match_tags is not None) and (
             tags is None or not all(tag in tags for tag in match_tags)
@@ -1945,21 +1890,27 @@ def _print_zoo_dataset_list(
 
 
 class DatasetZooFindCommand(Command):
-    """Locate the downloaded zoo dataset on disk.
+    """Locate a downloaded zoo dataset on disk.
 
     Examples::
 
-        # Print the location of the downloaded zoo dataset on disk
+        # Print the location of a downloaded zoo dataset on disk
         fiftyone zoo datasets find <name>
 
-        # Print the location of a specific split of the dataset
+        # Print the location of a remotely-sourced zoo dataset on disk
+        fiftyone zoo datasets find https://github.com/<user>/<repo>
+        fiftyone zoo datasets find <url>
+
+        # Print the location of a specific split of a dataset
         fiftyone zoo datasets find <name> --split <split>
     """
 
     @staticmethod
     def setup(parser):
         parser.add_argument(
-            "name", metavar="NAME", help="the name of the dataset"
+            "name_or_url",
+            metavar="NAME_OR_URL",
+            help="the name or remote location of the dataset",
         )
         parser.add_argument(
             "-s",
@@ -1970,10 +1921,10 @@ class DatasetZooFindCommand(Command):
 
     @staticmethod
     def execute(parser, args):
-        name = args.name
+        name_or_url = args.name_or_url
         split = args.split
 
-        dataset_dir = fozd.find_zoo_dataset(name, split=split)
+        dataset_dir = fozd.find_zoo_dataset(name_or_url, split=split)
         print(dataset_dir)
 
 
@@ -1984,71 +1935,83 @@ class DatasetZooInfoCommand(Command):
 
         # Print information about a zoo dataset
         fiftyone zoo datasets info <name>
+
+        # Print information about a remote zoo dataset
+        fiftyone zoo datasets info https://github.com/<user>/<repo>
+        fiftyone zoo datasets info <url>
     """
 
     @staticmethod
     def setup(parser):
         parser.add_argument(
-            "name", metavar="NAME", help="the name of the dataset"
-        )
-        parser.add_argument(
-            "-b",
-            "--base-dir",
-            metavar="BASE_DIR",
-            help=(
-                "a custom base directory in which to search for downloaded "
-                "datasets"
-            ),
+            "name_or_url",
+            metavar="NAME_OR_URL",
+            help="the name or remote location of the dataset",
         )
 
     @staticmethod
     def execute(parser, args):
-        name = args.name
+        name_or_url = args.name_or_url
 
-        # Print dataset info
-        zoo_dataset = fozd.get_zoo_dataset(name)
-        print(
-            "***** Dataset description *****\n%s"
-            % textwrap.dedent("    " + zoo_dataset.__doc__)
-        )
+        zoo_dataset = fozd.get_zoo_dataset(name_or_url)
 
-        # Check if dataset is downloaded
-        base_dir = args.base_dir
-        downloaded_datasets = fozd.list_downloaded_zoo_datasets(
-            base_dir=base_dir
-        )
+        try:
+            dataset_dir = fozd.find_zoo_dataset(name_or_url)
+        except:
+            dataset_dir = None
 
-        if zoo_dataset.has_tags:
-            print("***** Tags *****")
-            print("%s\n" % ", ".join(zoo_dataset.tags))
+        if zoo_dataset.is_remote:
+            _print_dict_as_table(zoo_dataset.metadata)
+            print("")
+        else:
+            description = textwrap.dedent("    " + zoo_dataset.__doc__)
+            if description:
+                print("***** Dataset description *****\n%s" % description)
 
-        if zoo_dataset.has_splits:
-            print("***** Supported splits *****")
-            print("%s\n" % ", ".join(zoo_dataset.supported_splits))
+            if zoo_dataset.has_tags:
+                print("***** Tags *****")
+                print("%s\n" % ", ".join(zoo_dataset.tags))
+
+            if zoo_dataset.has_splits:
+                print("***** Supported splits *****")
+                print("%s\n" % ", ".join(zoo_dataset.supported_splits))
 
         print("***** Dataset location *****")
-        if name not in downloaded_datasets:
-            print("Dataset '%s' is not downloaded" % name)
-        else:
-            dataset_dir, info = downloaded_datasets[name]
+        if dataset_dir is not None:
             print(dataset_dir)
-            print("\n***** Dataset info *****")
-            print(info)
+        else:
+            print("Dataset '%s' is not downloaded" % name_or_url)
 
 
 class DatasetZooDownloadCommand(Command):
     """Download zoo datasets.
 
+    When downloading remotely-sourced zoo datasets, you can provide any of the
+    following formats:
+
+    -   a GitHub repo URL like ``https://github.com/<user>/<repo>``
+    -   a GitHub ref like ``https://github.com/<user>/<repo>/tree/<branch>`` or
+        ``https://github.com/<user>/<repo>/commit/<commit>``
+    -   a GitHub ref string like ``<user>/<repo>[/<ref>]``
+    -   a publicly accessible URL of an archive (eg zip or tar) file
+
+    .. note::
+
+        To download from a private GitHub repository that you have access to,
+        provide your GitHub personal access token by setting the
+        ``GITHUB_TOKEN`` environment variable.
+
     Examples::
 
-        # Download the entire zoo dataset
+        # Download a zoo dataset
         fiftyone zoo datasets download <name>
 
-        # Download the specified split(s) of the zoo dataset
-        fiftyone zoo datasets download <name> --splits <split1> ...
+        # Download a remotely-sourced zoo dataset
+        fiftyone zoo datasets download https://github.com/<user>/<repo>
+        fiftyone zoo datasets download <url>
 
-        # Download the zoo dataset to a custom directory
-        fiftyone zoo datasets download <name> --dataset-dir <dataset-dir>
+        # Download the specified split(s) of a zoo dataset
+        fiftyone zoo datasets download <name> --splits <split1> ...
 
         # Download a zoo dataset that requires extra keyword arguments
         fiftyone zoo datasets download <name> \\
@@ -2058,7 +2021,9 @@ class DatasetZooDownloadCommand(Command):
     @staticmethod
     def setup(parser):
         parser.add_argument(
-            "name", metavar="NAME", help="the name of the dataset"
+            "name_or_url",
+            metavar="NAME_OR_URL",
+            help="the name or remote location of the dataset",
         )
         parser.add_argument(
             "-s",
@@ -2066,12 +2031,6 @@ class DatasetZooDownloadCommand(Command):
             metavar="SPLITS",
             nargs="+",
             help="the dataset splits to download",
-        )
-        parser.add_argument(
-            "-d",
-            "--dataset-dir",
-            metavar="DATASET_DIR",
-            help="a custom directory to which to download the dataset",
         )
         parser.add_argument(
             "-k",
@@ -2087,32 +2046,45 @@ class DatasetZooDownloadCommand(Command):
 
     @staticmethod
     def execute(parser, args):
-        name = args.name
+        name_or_url = args.name_or_url
         splits = args.splits
-        dataset_dir = args.dataset_dir
         kwargs = args.kwargs or {}
 
-        fozd.download_zoo_dataset(
-            name, splits=splits, dataset_dir=dataset_dir, **kwargs
-        )
+        fozd.download_zoo_dataset(name_or_url, splits=splits, **kwargs)
 
 
 class DatasetZooLoadCommand(Command):
     """Load zoo datasets as persistent FiftyOne datasets.
+
+    When loading remotely-sourced zoo datasets, you can provide any of the
+    following formats:
+
+    -   a GitHub repo URL like ``https://github.com/<user>/<repo>``
+    -   a GitHub ref like ``https://github.com/<user>/<repo>/tree/<branch>`` or
+        ``https://github.com/<user>/<repo>/commit/<commit>``
+    -   a GitHub ref string like ``<user>/<repo>[/<ref>]``
+    -   a publicly accessible URL of an archive (eg zip or tar) file
+
+    .. note::
+
+        To download from a private GitHub repository that you have access to,
+        provide your GitHub personal access token by setting the
+        ``GITHUB_TOKEN`` environment variable.
 
     Examples::
 
         # Load the zoo dataset with the given name
         fiftyone zoo datasets load <name>
 
-        # Load the specified split(s) of the zoo dataset
+        # Load a remotely-sourced zoo dataset
+        fiftyone zoo datasets load https://github.com/<user>/<repo>
+        fiftyone zoo datasets load <url>
+
+        # Load the specified split(s) of a zoo dataset
         fiftyone zoo datasets load <name> --splits <split1> ...
 
-        # Load the zoo dataset with a custom name
+        # Load a zoo dataset with a custom name
         fiftyone zoo datasets load <name> --dataset-name <dataset-name>
-
-        # Load the zoo dataset from a custom directory
-        fiftyone zoo datasets load <name> --dataset-dir <dataset-dir>
 
         # Load a zoo dataset that requires custom keyword arguments
         fiftyone zoo datasets load <name> \\
@@ -2126,7 +2098,9 @@ class DatasetZooLoadCommand(Command):
     @staticmethod
     def setup(parser):
         parser.add_argument(
-            "name", metavar="NAME", help="the name of the dataset"
+            "name_or_url",
+            metavar="NAME_OR_URL",
+            help="the name or remote location of the dataset",
         )
         parser.add_argument(
             "-s",
@@ -2142,12 +2116,6 @@ class DatasetZooLoadCommand(Command):
             help="a custom name to give the FiftyOne dataset",
         )
         parser.add_argument(
-            "-d",
-            "--dataset-dir",
-            metavar="DATASET_DIR",
-            help="a custom directory in which the dataset is downloaded",
-        )
-        parser.add_argument(
             "-k",
             "--kwargs",
             nargs="+",
@@ -2161,17 +2129,15 @@ class DatasetZooLoadCommand(Command):
 
     @staticmethod
     def execute(parser, args):
-        name = args.name
+        name_or_url = args.name_or_url
         splits = args.splits
         dataset_name = args.dataset_name
-        dataset_dir = args.dataset_dir
         kwargs = args.kwargs or {}
 
         dataset = fozd.load_zoo_dataset(
-            name,
+            name_or_url,
             splits=splits,
             dataset_name=dataset_name,
-            dataset_dir=dataset_dir,
             persistent=True,
             **kwargs,
         )
@@ -2182,8 +2148,12 @@ class DatasetZooDeleteCommand(Command):
 
     Examples::
 
-        # Delete an entire zoo dataset from disk
+        # Delete a zoo dataset from disk
         fiftyone zoo datasets delete <name>
+
+        # Delete a remotely-sourced zoo dataset from disk
+        fiftyone zoo datasets delete https://github.com/<user>/<repo>
+        fiftyone zoo datasets delete <url>
 
         # Delete a specific split of a zoo dataset from disk
         fiftyone zoo datasets delete <name> --split <split>
@@ -2192,7 +2162,9 @@ class DatasetZooDeleteCommand(Command):
     @staticmethod
     def setup(parser):
         parser.add_argument(
-            "name", metavar="NAME", help="the name of the dataset"
+            "name_or_url",
+            metavar="NAME_OR_URL",
+            help="the name or remote location of the dataset",
         )
         parser.add_argument(
             "-s",
@@ -2203,9 +2175,9 @@ class DatasetZooDeleteCommand(Command):
 
     @staticmethod
     def execute(parser, args):
-        name = args.name
+        name_or_url = args.name_or_url
         split = args.split
-        fozd.delete_zoo_dataset(name, split=split)
+        fozd.delete_zoo_dataset(name_or_url, split=split)
 
 
 class ModelZooCommand(Command):
@@ -2224,6 +2196,15 @@ class ModelZooCommand(Command):
         _register_command(subparsers, "apply", ModelZooApplyCommand)
         _register_command(subparsers, "embed", ModelZooEmbedCommand)
         _register_command(subparsers, "delete", ModelZooDeleteCommand)
+        _register_command(
+            subparsers, "list-sources", ModelZooListSourcesCommand
+        )
+        _register_command(
+            subparsers, "register-source", ModelZooRegisterSourceCommand
+        )
+        _register_command(
+            subparsers, "delete-source", ModelZooDeleteSourceCommand
+        )
 
     @staticmethod
     def execute(parser, args):
@@ -2231,7 +2212,7 @@ class ModelZooCommand(Command):
 
 
 class ModelZooListCommand(Command):
-    """List datasets in the FiftyOne Model Zoo.
+    """List models in the FiftyOne Model Zoo.
 
     Examples::
 
@@ -2246,6 +2227,9 @@ class ModelZooListCommand(Command):
 
         # List available models with the given tag
         fiftyone zoo models list --tags <tag>
+
+        # List available models from the given remote source
+        fiftyone zoo models list --source <source>
     """
 
     @staticmethod
@@ -2268,50 +2252,55 @@ class ModelZooListCommand(Command):
             metavar="TAGS",
             help="only show models with the specified tag or list,of,tags",
         )
+        parser.add_argument(
+            "-s",
+            "--source",
+            metavar="SOURCE",
+            help="only show models available from the specified remote source",
+        )
 
     @staticmethod
     def execute(parser, args):
         names_only = args.names_only
         downloaded_only = args.downloaded_only
-        match_tags = args.tags
+        tags = args.tags
+        source = args.source
 
-        models_manifest = fozm._load_zoo_models_manifest()
+        if tags is not None:
+            tags = tags.split(",")
+
+        models = fozm._list_zoo_models(tags=tags, source=source)
         downloaded_models = fozm.list_downloaded_zoo_models()
 
         _print_zoo_models_list(
-            models_manifest,
+            models,
             downloaded_models,
             downloaded_only=downloaded_only,
-            match_tags=match_tags,
             names_only=names_only,
         )
 
 
 def _print_zoo_models_list(
-    models_manifest,
+    models,
     downloaded_models,
     downloaded_only=False,
-    match_tags=None,
     names_only=False,
 ):
-    if match_tags is not None:
-        match_tags = match_tags.split(",")
-
     records = []
-    for model in sorted(models_manifest.models, key=lambda model: model.name):
+    for model in sorted(models, key=lambda model: model.name):
         name = model.name
 
         if downloaded_only and name not in downloaded_models:
             continue
 
-        if (match_tags is not None) and not all(
-            model.has_tag(tag) for tag in match_tags
-        ):
-            continue
-
         if names_only:
             records.append(name)
             continue
+
+        if isinstance(model, fozm.RemoteZooModel):
+            is_remote = "\u2713"
+        else:
+            is_remote = ""
 
         if name in downloaded_models:
             is_downloaded = "\u2713"
@@ -2325,7 +2314,7 @@ def _print_zoo_models_list(
 
         tags = ",".join(model.tags or [])
 
-        records.append((name, tags, is_downloaded, model_path))
+        records.append((name, tags, is_remote, is_downloaded, model_path))
 
     if names_only:
         for name in records:
@@ -2333,7 +2322,7 @@ def _print_zoo_models_list(
 
         return
 
-    headers = ["name", "tags", "downloaded", "model_path"]
+    headers = ["name", "tags", "remote", "downloaded", "model_path"]
     table_str = tabulate(records, headers=headers, tablefmt=_TABLE_FORMAT)
     print(table_str)
 
@@ -2485,43 +2474,95 @@ def _print_model_requirements(zoo_model):
 class ModelZooDownloadCommand(Command):
     """Download zoo models.
 
+    When downloading remotely-sourced zoo models, you can provide any of the
+    following formats:
+
+    -   a GitHub repo URL like ``https://github.com/<user>/<repo>``
+    -   a GitHub ref like ``https://github.com/<user>/<repo>/tree/<branch>`` or
+        ``https://github.com/<user>/<repo>/commit/<commit>``
+    -   a GitHub ref string like ``<user>/<repo>[/<ref>]``
+    -   a publicly accessible URL of an archive (eg zip or tar) file
+
+    .. note::
+
+        To download from a private GitHub repository that you have access to,
+        provide your GitHub personal access token by setting the
+        ``GITHUB_TOKEN`` environment variable.
+
     Examples::
 
-        # Download the zoo model
+        # Download a zoo model
         fiftyone zoo models download <name>
+
+        # Download a remotely-sourced zoo model
+        fiftyone zoo models download https://github.com/<user>/<repo> \\
+            --model-name <name>
+        fiftyone zoo models download <url> --model-name <name>
     """
 
     @staticmethod
     def setup(parser):
         parser.add_argument(
-            "name", metavar="NAME", help="the name of the zoo model"
+            "name_or_url",
+            metavar="NAME_OR_URL",
+            help="the name or remote location of the model",
         )
         parser.add_argument(
-            "-f",
-            "--force",
-            action="store_true",
+            "-n",
+            "--model-name",
+            metavar="MODEL_NAME",
+            default=None,
             help=(
-                "whether to force download the model if it is already "
-                "downloaded"
+                "the specific model to download, if `name_or_url` is a remote "
+                "source"
             ),
+        )
+        parser.add_argument(
+            "-o",
+            "--overwrite",
+            action="store_true",
+            help="whether to overwrite any existing model files",
         )
 
     @staticmethod
     def execute(parser, args):
-        name = args.name
-        force = args.force
-        fozm.download_zoo_model(name, overwrite=force)
+        fozm.download_zoo_model(
+            args.name_or_url,
+            model_name=args.model_name,
+            overwrite=args.overwrite,
+        )
 
 
 class ModelZooApplyCommand(Command):
     """Apply zoo models to datasets.
 
+    When applying remotely-sourced zoo models, you can provide any of the
+    following formats:
+
+    -   a GitHub repo URL like ``https://github.com/<user>/<repo>``
+    -   a GitHub ref like ``https://github.com/<user>/<repo>/tree/<branch>`` or
+        ``https://github.com/<user>/<repo>/commit/<commit>``
+    -   a GitHub ref string like ``<user>/<repo>[/<ref>]``
+    -   a publicly accessible URL of an archive (eg zip or tar) file
+
+    .. note::
+
+        To download from a private GitHub repository that you have access to,
+        provide your GitHub personal access token by setting the
+        ``GITHUB_TOKEN`` environment variable.
+
     Examples::
 
-        # Apply the zoo model to the dataset
+        # Apply a zoo model to a dataset
         fiftyone zoo models apply <model-name> <dataset-name> <label-field>
 
-        # Apply a zoo classifier with some customized parameters
+        # Apply a remotely-sourced zoo model to a dataset
+        fiftyone zoo models apply https://github.com/<user>/<repo> \\
+            <dataset-name> <label-field> --model-name <model-name>
+        fiftyone zoo models apply <url> \\
+            <dataset-name> <label-field> --model-name <model-name>
+
+        # Apply a zoo model with some customized parameters
         fiftyone zoo models apply \\
             <model-name> <dataset-name> <label-field> \\
             --confidence-thresh 0.7 \\
@@ -2532,9 +2573,9 @@ class ModelZooApplyCommand(Command):
     @staticmethod
     def setup(parser):
         parser.add_argument(
-            "model_name",
-            metavar="MODEL_NAME",
-            help="the name of the zoo model",
+            "name_or_url",
+            metavar="NAME_OR_URL",
+            help="the name or remote location of the zoo model",
         )
         parser.add_argument(
             "dataset_name",
@@ -2545,6 +2586,16 @@ class ModelZooApplyCommand(Command):
             "label_field",
             metavar="LABEL_FIELD",
             help="the name of the field in which to store the predictions",
+        )
+        parser.add_argument(
+            "-n",
+            "--model-name",
+            metavar="MODEL_NAME",
+            default=None,
+            help=(
+                "the specific model to apply, if `name_or_url` is a remote "
+                "source"
+            ),
         )
         parser.add_argument(
             "-b",
@@ -2590,7 +2641,8 @@ class ModelZooApplyCommand(Command):
     @staticmethod
     def execute(parser, args):
         model = fozm.load_zoo_model(
-            args.model_name,
+            args.name_or_url,
+            model_name=args.model_name,
             install_requirements=args.install,
             error_level=args.error_level,
         )
@@ -2609,18 +2661,39 @@ class ModelZooApplyCommand(Command):
 class ModelZooEmbedCommand(Command):
     """Generate embeddings for datasets with zoo models.
 
+    When applying remotely-sourced zoo models, you can provide any of the
+    following formats:
+
+    -   a GitHub repo URL like ``https://github.com/<user>/<repo>``
+    -   a GitHub ref like ``https://github.com/<user>/<repo>/tree/<branch>`` or
+        ``https://github.com/<user>/<repo>/commit/<commit>``
+    -   a GitHub ref string like ``<user>/<repo>[/<ref>]``
+    -   a publicly accessible URL of an archive (eg zip or tar) file
+
+    .. note::
+
+        To download from a private GitHub repository that you have access to,
+        provide your GitHub personal access token by setting the
+        ``GITHUB_TOKEN`` environment variable.
+
     Examples::
 
-        # Generate embeddings for the dataset with the zoo model
+        # Generate embeddings for a dataset with a zoo model
         fiftyone zoo models embed <model-name> <dataset-name> <embeddings-field>
+
+        # Generate embeddings for a dataset with a remotely-sourced zoo model
+        fiftyone zoo models embed https://github.com/<user>/<repo> \\
+            <dataset-name> <embeddings-field> --model-name <model-name>
+        fiftyone zoo models embed <url> \\
+            <dataset-name> <embeddings-field> --model-name <model-name>
     """
 
     @staticmethod
     def setup(parser):
         parser.add_argument(
-            "model_name",
-            metavar="MODEL_NAME",
-            help="the name of the zoo model",
+            "name_or_url",
+            metavar="NAME_OR_URL",
+            help="the name or remote location of the zoo model",
         )
         parser.add_argument(
             "dataset_name",
@@ -2631,6 +2704,16 @@ class ModelZooEmbedCommand(Command):
             "embeddings_field",
             metavar="EMBEDDINGS_FIELD",
             help="the name of the field in which to store the embeddings",
+        )
+        parser.add_argument(
+            "-n",
+            "--model-name",
+            metavar="MODEL_NAME",
+            default=None,
+            help=(
+                "the specific model to apply, if `name_or_url` is a remote "
+                "source"
+            ),
         )
         parser.add_argument(
             "-b",
@@ -2659,7 +2742,8 @@ class ModelZooEmbedCommand(Command):
     @staticmethod
     def execute(parser, args):
         model = fozm.load_zoo_model(
-            args.model_name,
+            args.name_or_url,
+            model_name=args.model_name,
             install_requirements=args.install,
             error_level=args.error_level,
         )
@@ -2692,8 +2776,122 @@ class ModelZooDeleteCommand(Command):
         fozm.delete_zoo_model(name)
 
 
+class ModelZooListSourcesCommand(Command):
+    """Lists remote zoo model sources that are registered locally.
+
+    Examples::
+
+        # Lists the registered remote zoo model sources
+        fiftyone zoo models list-sources
+    """
+
+    @staticmethod
+    def setup(parser):
+        pass
+
+    @staticmethod
+    def execute(parser, args):
+        _, remote_sources = fozm._load_zoo_models_manifest()
+
+        _print_zoo_model_sources_list(remote_sources)
+
+
+def _print_zoo_model_sources_list(remote_sources):
+    headers = ["name", "url"]
+
+    rows = []
+    for manifest in remote_sources.values():
+        rows.append(
+            {
+                "name": manifest.name or "",
+                "url": manifest.url,
+            }
+        )
+
+    records = [tuple(_format_cell(r[key]) for key in headers) for r in rows]
+
+    table_str = tabulate(records, headers=headers, tablefmt=_TABLE_FORMAT)
+    print(table_str)
+
+
+class ModelZooRegisterSourceCommand(Command):
+    """Registers a remote source of zoo models.
+
+    You can provide any of the following formats:
+
+    -   a GitHub repo URL like ``https://github.com/<user>/<repo>``
+    -   a GitHub ref like ``https://github.com/<user>/<repo>/tree/<branch>`` or
+        ``https://github.com/<user>/<repo>/commit/<commit>``
+    -   a GitHub ref string like ``<user>/<repo>[/<ref>]``
+    -   a publicly accessible URL of an archive (eg zip or tar) file
+
+    .. note::
+
+        To download from a private GitHub repository that you have access to,
+        provide your GitHub personal access token by setting the
+        ``GITHUB_TOKEN`` environment variable.
+
+    Examples::
+
+        # Register a remote zoo model source
+        fiftyone zoo models register-source https://github.com/<user>/<repo>
+        fiftyone zoo models register-source <url>
+    """
+
+    @staticmethod
+    def setup(parser):
+        parser.add_argument(
+            "url_or_gh_repo",
+            metavar="URL_OR_GH_REPO",
+            help="the remote source to register",
+        )
+        parser.add_argument(
+            "-o",
+            "--overwrite",
+            action="store_true",
+            help="whether to overwrite any existing files",
+        )
+
+    @staticmethod
+    def execute(parser, args):
+        fozm.register_zoo_model_source(
+            args.url_or_gh_repo, overwrite=args.overwrite
+        )
+
+
+class ModelZooDeleteSourceCommand(Command):
+    """Deletes the remote source and all downloaded models associated with it.
+
+    You can provide any of the following formats:
+
+    -   a GitHub repo URL like ``https://github.com/<user>/<repo>``
+    -   a GitHub ref like ``https://github.com/<user>/<repo>/tree/<branch>`` or
+        ``https://github.com/<user>/<repo>/commit/<commit>``
+    -   a GitHub ref string like ``<user>/<repo>[/<ref>]``
+    -   a publicly accessible URL of an archive (eg zip or tar) file
+
+    Examples::
+
+        # Delete a remote zoo model source
+        fiftyone zoo models delete-source https://github.com/<user>/<repo>
+        fiftyone zoo models delete-source <url>
+    """
+
+    @staticmethod
+    def setup(parser):
+        parser.add_argument(
+            "url_or_gh_repo",
+            metavar="URL_OR_GH_REPO",
+            help="the remote source to delete",
+        )
+
+    @staticmethod
+    def execute(parser, args):
+        fozm.delete_zoo_model_source(args.url_or_gh_repo)
+
+
 class OperatorsCommand(Command):
-    """Tools for working with FiftyOne operators."""
+    """Tools for working with FiftyOne operators and panels."""
 
     @staticmethod
     def setup(parser):
@@ -2707,18 +2905,24 @@ class OperatorsCommand(Command):
 
 
 class OperatorsListCommand(Command):
-    """List operators that you've downloaded or created locally.
+    """List operators and panels that are installed locally.
 
     Examples::
 
-        # List all locally available operators
+        # List all available operators and panels
         fiftyone operators list
 
-        # List enabled operators
+        # List enabled operators and panels
         fiftyone operators list --enabled
 
-        # List disabled operators
+        # List disabled operators and panels
         fiftyone operators list --disabled
+
+        # List non-builtin operators and panels
+        fiftyone operators list --no-builtins
+
+        # List panels
+        fiftyone operators list --panels-only
     """
 
     @staticmethod
@@ -2728,14 +2932,42 @@ class OperatorsListCommand(Command):
             "--enabled",
             action="store_true",
             default=None,
-            help="only show enabled operators",
+            help="only show enabled operators and panels",
         )
         parser.add_argument(
             "-d",
             "--disabled",
             action="store_true",
             default=None,
-            help="only show disabled operators",
+            help="only show disabled operators and panels",
+        )
+        parser.add_argument(
+            "-b",
+            "--builtins-only",
+            action="store_true",
+            default=None,
+            help="only show builtin operators and panels",
+        )
+        parser.add_argument(
+            "-c",
+            "--no-builtins",
+            action="store_true",
+            default=None,
+            help="only show non-builtin operators and panels",
+        )
+        parser.add_argument(
+            "-o",
+            "--operators-only",
+            action="store_true",
+            default=None,
+            help="only show non-panel operators",
+        )
+        parser.add_argument(
+            "-p",
+            "--panels-only",
+            action="store_true",
+            default=None,
+            help="only show panels",
         )
         parser.add_argument(
             "-n",
@@ -2753,11 +2985,25 @@ class OperatorsListCommand(Command):
         else:
             enabled = "all"
 
-        _print_operators_list(enabled, args.names_only)
+        if args.builtins_only:
+            builtin = True
+        elif args.no_builtins:
+            builtin = False
+        else:
+            builtin = "all"
+
+        if args.operators_only:
+            type = "operator"
+        elif args.panels_only:
+            type = "panel"
+        else:
+            type = None
+
+        _print_operators_list(enabled, builtin, type, args.names_only)
 
 
-def _print_operators_list(enabled, names_only):
-    operators = foo.list_operators(enabled=enabled)
+def _print_operators_list(enabled, builtin, type, names_only):
+    operators = foo.list_operators(enabled=enabled, builtin=builtin, type=type)
 
     if names_only:
         operators_map = defaultdict(list)
@@ -2771,7 +3017,7 @@ def _print_operators_list(enabled, names_only):
 
         return
 
-    headers = ["uri", "enabled", "builtin", "unlisted"]
+    headers = ["uri", "enabled", "builtin", "panel", "unlisted"]
 
     enabled_plugins = set(fop.list_enabled_plugins())
 
@@ -2782,6 +3028,7 @@ def _print_operators_list(enabled, names_only):
                 "uri": op.uri,
                 "enabled": op.builtin or op.plugin_name in enabled_plugins,
                 "builtin": op.builtin,
+                "panel": isinstance(op, foo.Panel),
                 "unlisted": op.config.unlisted,
             }
         )
@@ -2793,18 +3040,19 @@ def _print_operators_list(enabled, names_only):
 
 
 class OperatorsInfoCommand(Command):
-    """Prints information about operators that you've downloaded or created
-    locally.
+    """Prints info about operators and panels that are installed locally.
 
     Examples::
 
-        # Prints information about an operator
+        # Prints information about an operator or panel
         fiftyone operators info <uri>
     """
 
     @staticmethod
     def setup(parser):
-        parser.add_argument("uri", metavar="URI", help="the operator URI")
+        parser.add_argument(
+            "uri", metavar="URI", help="the operator or panel URI"
+        )
 
     @staticmethod
     def execute(parser, args):
@@ -2923,7 +3171,7 @@ class DelegatedListCommand(Command):
             default=None,
             help=(
                 "only list operations with this state. Supported values are "
-                "('QUEUED', 'RUNNING', 'COMPLETED', 'FAILED')"
+                "('SCHEDULED', 'QUEUED', 'RUNNING', 'COMPLETED', 'FAILED')"
             ),
         )
         parser.add_argument(
@@ -2931,7 +3179,7 @@ class DelegatedListCommand(Command):
             default="QUEUED_AT",
             help=(
                 "how to sort the operations. Supported values are "
-                "('QUEUED_AT', 'STARTED_AT', COMPLETED_AT', 'FAILED_AT', 'OPERATOR')"
+                "('SCHEDULED_AT', 'QUEUED_AT', 'STARTED_AT', COMPLETED_AT', 'FAILED_AT', 'OPERATOR')"
             ),
         )
         parser.add_argument(
@@ -3163,7 +3411,7 @@ class DelegatedCleanupCommand(Command):
             default=None,
             help=(
                 "delete operations in this state. Supported values are "
-                "('QUEUED', 'COMPLETED', 'FAILED')"
+                "('SCHEDULED', 'QUEUED', 'COMPLETED', 'FAILED')"
             ),
         )
         parser.add_argument(
@@ -3274,11 +3522,11 @@ class PluginsCommand(Command):
 
 
 class PluginsListCommand(Command):
-    """List plugins that you've downloaded or created locally.
+    """List plugins that are installed locally.
 
     Examples::
 
-        # List all locally available plugins
+        # List all available plugins
         fiftyone plugins list
 
         # List enabled plugins
@@ -3286,6 +3534,9 @@ class PluginsListCommand(Command):
 
         # List disabled plugins
         fiftyone plugins list --disabled
+
+        # List non-builtin plugins
+        fiftyone plugins list --no-builtins
     """
 
     @staticmethod
@@ -3305,6 +3556,20 @@ class PluginsListCommand(Command):
             help="only show disabled plugins",
         )
         parser.add_argument(
+            "-b",
+            "--builtins-only",
+            action="store_true",
+            default=None,
+            help="only show builtin plugins",
+        )
+        parser.add_argument(
+            "-c",
+            "--no-builtins",
+            action="store_true",
+            default=None,
+            help="only show non-builtin plugins",
+        )
+        parser.add_argument(
             "-n",
             "--names-only",
             action="store_true",
@@ -3320,11 +3585,20 @@ class PluginsListCommand(Command):
         else:
             enabled = "all"
 
-        _print_plugins_list(enabled, args.names_only)
+        if args.builtins_only:
+            builtin = True
+        elif args.no_builtins:
+            builtin = False
+        else:
+            builtin = "all"
+
+        _print_plugins_list(enabled, builtin, args.names_only)
 
 
-def _print_plugins_list(enabled, names_only):
-    plugin_defintions = fop.list_plugins(enabled=enabled)
+def _print_plugins_list(enabled, builtin, names_only):
+    plugin_defintions = fop.list_plugins(
+        enabled=enabled, builtin=builtin, shadowed="all"
+    )
 
     if names_only:
         for pd in plugin_defintions:
@@ -3334,17 +3608,36 @@ def _print_plugins_list(enabled, names_only):
 
     enabled_plugins = set(fop.list_enabled_plugins())
 
-    headers = ["plugin", "version", "enabled", "directory"]
+    shadowed_paths = set()
+    for pd in plugin_defintions:
+        if pd.shadow_paths:
+            shadowed_paths.update(pd.shadow_paths)
+
+    headers = [
+        "plugin",
+        "version",
+        "enabled",
+        "builtin",
+        "shadowed",
+        "directory",
+    ]
     rows = []
     for pd in plugin_defintions:
+        shadowed = pd.directory in shadowed_paths
+        enabled = (pd.builtin or pd.name in enabled_plugins) and not shadowed
         rows.append(
             {
                 "plugin": pd.name,
                 "version": pd.version or "",
-                "enabled": pd.name in enabled_plugins,
+                "enabled": enabled,
+                "builtin": pd.builtin,
+                "shadowed": shadowed,
                 "directory": pd.directory,
             }
         )
+
+    if not shadowed_paths:
+        headers.remove("shadowed")
 
     records = [tuple(_format_cell(r[key]) for key in headers) for r in rows]
 
@@ -3353,29 +3646,41 @@ def _print_plugins_list(enabled, names_only):
 
 
 class PluginsInfoCommand(Command):
-    """Prints information about plugins that you've downloaded or created
-    locally.
+    """Prints info about plugins that are installed locally.
 
     Examples::
 
         # Prints information about a plugin
         fiftyone plugins info <name>
+
+        # Prints information about a plugin in a given directory
+        fiftyone plugins info <dir>
     """
 
     @staticmethod
     def setup(parser):
-        parser.add_argument("name", metavar="NAME", help="the plugin name")
+        parser.add_argument(
+            "name_or_dir",
+            metavar="NAME_OR_DIR",
+            help="the plugin name or directory",
+        )
 
     @staticmethod
     def execute(parser, args):
-        _print_plugin_info(args.name)
+        _print_plugin_info(args.name_or_dir)
 
 
-def _print_plugin_info(name):
-    plugin_defintion = fop.get_plugin(name)
+def _print_plugin_info(name_or_dir):
+    try:
+        pd = fop.get_plugin(name_or_dir)
+    except:
+        if os.path.isdir(name_or_dir):
+            pd = fop.get_plugin(plugin_dir=name_or_dir)
+        else:
+            raise
 
-    d = plugin_defintion.to_dict()
-    d["directory"] = plugin_defintion.directory
+    d = pd.to_dict()
+    d["directory"] = pd.directory
     _print_dict_as_table(d)
 
 

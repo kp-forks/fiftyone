@@ -1,6 +1,10 @@
 import { Loading, Selector } from "@fiftyone/components";
 import { OperatorPlacements, types } from "@fiftyone/operators";
-import { PluginComponentType, registerComponent } from "@fiftyone/plugins";
+import {
+  Categories,
+  PluginComponentType,
+  registerComponent,
+} from "@fiftyone/plugins";
 import { usePanelTitle } from "@fiftyone/spaces";
 import { datasetName, distributionPaths, field } from "@fiftyone/state";
 import { BarChart } from "@mui/icons-material";
@@ -14,6 +18,7 @@ import {
 } from "recoil";
 import styled from "styled-components";
 import Histogram from "../components/Histogram";
+import { BUILT_IN_PANEL_PRIORITY_CONST } from "@fiftyone/utilities";
 
 const HistogramsContainer = styled.div`
   position: relative;
@@ -105,4 +110,8 @@ registerComponent({
   type: PluginComponentType.Panel,
   activator: () => true,
   Icon: BarChart,
+  panelOptions: {
+    priority: BUILT_IN_PANEL_PRIORITY_CONST,
+    category: Categories.Analyze,
+  },
 });

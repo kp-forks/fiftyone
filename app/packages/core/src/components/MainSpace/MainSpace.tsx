@@ -3,16 +3,21 @@ import { constants, useSessionSpaces } from "@fiftyone/state";
 import { isEqual, size } from "lodash";
 import React, { useEffect, useRef } from "react";
 
-const { FIFTYONE_SPACE_ID } = constants;
+const { FIFTYONE_GRID_SPACES_ID } = constants;
 
 function MainSpace() {
   const [sessionSpaces, setSessionSpaces, sessionPanelsState] =
     useSessionSpaces();
-  const { spaces, updateSpaces } = useSpaces(FIFTYONE_SPACE_ID, sessionSpaces);
+  const { spaces, updateSpaces, clearSpaces } = useSpaces(
+    FIFTYONE_GRID_SPACES_ID,
+    sessionSpaces
+  );
   const [panelsState, setPanelsState] = usePanelsState();
   const oldSpaces = useRef(spaces);
   const oldPanelsState = useRef(panelsState);
   const isMounted = useRef(false);
+
+  useEffect(() => clearSpaces, [clearSpaces]);
 
   useEffect(() => {
     if (!spaces.equals(sessionSpaces)) {
@@ -21,7 +26,7 @@ function MainSpace() {
   }, [sessionSpaces]);
 
   useEffect(() => {
-    if (size(sessionPanelsState)) {
+    if (size(sessionPanelsState) && !isEqual(sessionPanelsState, panelsState)) {
       setPanelsState(sessionPanelsState);
     }
   }, [sessionPanelsState]);
@@ -51,7 +56,7 @@ function MainSpace() {
     spaces,
   ]);
 
-  return <SpacesRoot id={FIFTYONE_SPACE_ID} />;
+  return <SpacesRoot id={FIFTYONE_GRID_SPACES_ID} />;
 }
 
 export default React.memo(MainSpace);

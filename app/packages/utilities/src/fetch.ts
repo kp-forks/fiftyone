@@ -3,7 +3,6 @@ import {
   fetchEventSource,
 } from "@microsoft/fetch-event-source";
 import fetchRetry from "fetch-retry";
-import { isElectron } from "./electron";
 
 import { NetworkError, ServerError } from "./errors";
 
@@ -19,7 +18,7 @@ export interface FetchFunction {
     body?: A,
     result?: "json" | "blob" | "text" | "arrayBuffer" | "json-stream",
     retries?: number,
-    retryCodes?: number[] | "arrayBuffer"
+    retryCodes?: number[]
   ): Promise<R>;
 }
 
@@ -111,11 +110,11 @@ export const setFetchFunction = (
     const fetchCall = retries
       ? fetchRetry(fetch, {
           retries,
-          retryDelay: 0,
+          retryDelay: 500,
           retryOn: (attempt, error, response) => {
             if (
-              error !== null ||
-              (retryCodes.includes(response.status) && attempt < retries)
+              (error !== null || retryCodes.includes(response.status)) &&
+              attempt < retries
             ) {
               return true;
             }
@@ -130,6 +129,7 @@ export const setFetchFunction = (
       mode: "cors",
       body: body ? JSON.stringify(body) : null,
       signal: controller.signal,
+      referrerPolicy: "same-origin",
     });
 
     if (response.status >= 400) {
@@ -227,14 +227,12 @@ export const getAPI = () => {
   if (import.meta.env?.VITE_API) {
     return import.meta.env.VITE_API;
   }
+
   if (window.FIFTYONE_SERVER_ADDRESS) {
     return window.FIFTYONE_SERVER_ADDRESS;
   }
-  return isElectron()
-    ? `http://${process.env.FIFTYONE_SERVER_ADDRESS || "localhost"}:${
-        process.env.FIFTYONE_SERVER_PORT || 5151
-      }`
-    : window.location.origin;
+
+  return window.location.origin;
 };
 
 if (hasWindow) {
@@ -248,6 +246,8 @@ const polling =
   hasWindow &&
   typeof new URLSearchParams(window.location.search).get("polling") ===
     "string";
+const MAX_REOPEN_ATTEMPTS = 10;
+let eventSourceFetchErrorCount = 0;
 
 export const getEventSource = (
   path: string,
@@ -272,9 +272,11 @@ export const getEventSource = (
       method: "POST",
       signal,
       body: JSON.stringify(body),
+      referrerPolicy: "same-origin",
       async onopen(response) {
         if (response.ok) {
           events.onopen && events.onopen();
+          eventSourceFetchErrorCount = 0;
           return;
         }
 
@@ -300,7 +302,11 @@ export const getEventSource = (
           ["Failed to fetch", "network error"].includes(err.message)
         ) {
           events.onclose && events.onclose();
-          return;
+          if (eventSourceFetchErrorCount <= MAX_REOPEN_ATTEMPTS) {
+            eventSourceFetchErrorCount++;
+            return;
+          }
+          throw err; // close event source
         }
 
         events.onerror && events.onerror(err);
@@ -401,4 +407,19 @@ const pollingEventSource = (
         2000
       );
     });
+};
+
+const getFirstFilterPath = (requestBody: any) => {
+  if (requestBody && requestBody.query) {
+    if (requestBody.query.includes("paginateSamplesQuery")) {
+      const pathsArray = requestBody?.variables?.filters;
+      const paths = pathsArray ? Object.keys(pathsArray) : [];
+      return paths.length > 0 ? paths[0] : undefined;
+    }
+    if (requestBody.query.includes("lightningQuery")) {
+      const paths = requestBody?.variables?.input?.paths;
+      return paths && paths.length > 0 ? paths[0].path : undefined;
+    }
+  }
+  return undefined;
 };

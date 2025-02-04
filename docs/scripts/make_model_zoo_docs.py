@@ -2,7 +2,7 @@
 Script for generating the model zoo docs page contents
 ``docs/source/user_guide/model_zoo/models.rst``.
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
@@ -23,17 +23,15 @@ logger = logging.getLogger(__name__)
 _HEADER = """
 .. _model-zoo-models:
 
-Available Zoo Models
-====================
+Built-In Zoo Models
+===================
 
 .. default-role:: code
 
-This page lists all of the models available in the Model Zoo.
+This page lists all of the natively available models in the FiftyOne Model Zoo.
 
-.. note::
-
-    Check out the :ref:`API reference <model-zoo-api>` for complete
-    instructions for using the Model Zoo.
+Check out the :ref:`API reference <model-zoo-api>` for complete instructions
+for using the Model Zoo.
 """
 
 
@@ -90,6 +88,12 @@ _MODEL_TEMPLATE = """
 
     import fiftyone as fo
     import fiftyone.zoo as foz
+{% if 'segment-anything' in name and 'video' in name %}
+    from fiftyone import ViewField as F
+{% elif 'med-sam' in name %}
+    from fiftyone import ViewField as F
+    from fiftyone.utils.huggingface import load_from_hub
+{% endif %}
 
 {% if 'imagenet' in name %}
     dataset = foz.load_zoo_dataset(
@@ -97,6 +101,27 @@ _MODEL_TEMPLATE = """
         dataset_name=fo.get_default_dataset_name(),
         max_samples=50,
         shuffle=True,
+    )
+{% elif 'segment-anything' in name and 'video' in name %}
+    dataset = foz.load_zoo_dataset("quickstart-video", max_samples=2)
+
+    # Only retain detections in the first frame
+    (
+        dataset
+        .match_frames(F("frame_number") > 1)
+        .set_field("frames.detections", None)
+        .save()
+    )
+{% elif 'med-sam' in name %}
+    dataset = load_from_hub("Voxel51/BTCV-CT-as-video-MedSAM2-dataset")[:2]
+
+    # Retaining detections from a single frame in the middle
+    # Note that SAM2 only propagates segmentation masks forward in a video
+    (
+        dataset
+        .match_frames(F("frame_number") != 100)
+        .set_field("frames.gt_detections", None)
+        .save()
     )
 {% else %}
     dataset = foz.load_zoo_dataset(
@@ -108,7 +133,7 @@ _MODEL_TEMPLATE = """
     )
 {% endif %}
 
-{% if 'segment-anything' in tags %}
+{% if 'segment-anything' in tags and 'video' not in tags %}
     model = foz.load_zoo_model("{{ name }}")
 
     # Segment inside boxes
@@ -122,10 +147,41 @@ _MODEL_TEMPLATE = """
     dataset.apply_model(model, label_field="auto")
 
     session = fo.launch_app(dataset)
+{% elif 'med-sam' in name %}
+    model = foz.load_zoo_model("{{ name }}")
+
+    # Segment inside boxes and propagate to all frames
+    dataset.apply_model(
+        model,
+        label_field="pred_segmentations",
+        prompt_field="frames.gt_detections",
+    )
+
+    session = fo.launch_app(dataset)
+{% elif 'segment-anything' in tags and 'video' in tags %}
+    model = foz.load_zoo_model("{{ name }}")
+
+    # Segment inside boxes and propagate to all frames
+    dataset.apply_model(
+        model,
+        label_field="segmentations",
+        prompt_field="frames.detections",  # can contain Detections or Keypoints
+    )
+
+    session = fo.launch_app(dataset)
 {% elif 'dinov2' in name %}
     model = foz.load_zoo_model("{{ name }}")
 
     embeddings = dataset.compute_embeddings(model)
+{% elif 'zero-shot' in name and 'transformer' in name %}
+    model = foz.load_zoo_model(
+        "{{ name }}",
+        classes=["person", "dog", "cat", "bird", "car", "tree", "chair"],
+    )
+
+    dataset.apply_model(model, label_field="predictions")
+
+    session = fo.launch_app(dataset)
 {% else %}
     model = foz.load_zoo_model("{{ name }}")
 
@@ -307,7 +363,7 @@ def _render_card_model_content(template, model_name):
 
     tags = ",".join(tags)
 
-    link = "models.html#%s" % zoo_model.name
+    link = "models.html#%s" % zoo_model.name.replace(".", "-")
 
     description = zoo_model.description
 
@@ -376,7 +432,7 @@ def main():
     # Write docs page
 
     docs_dir = "/".join(os.path.realpath(__file__).split("/")[:-2])
-    outpath = os.path.join(docs_dir, "source/user_guide/model_zoo/models.rst")
+    outpath = os.path.join(docs_dir, "source/model_zoo/models.rst")
 
     print("Writing '%s'" % outpath)
     etau.write_file("\n".join(content), outpath)

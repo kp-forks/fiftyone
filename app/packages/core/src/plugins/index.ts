@@ -1,4 +1,5 @@
-import "./histograms";
-import "./samples";
-import "./SchemaIO";
 import "./OperatorIO";
+import "./SchemaIO";
+import "./histograms";
+import "./modal-sample";
+import "./samples";

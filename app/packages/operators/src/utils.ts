@@ -1,6 +1,7 @@
 import { getFetchParameters } from "@fiftyone/utilities";
+import { debounce, DebounceSettings, memoize } from "lodash";
 import { KeyboardEventHandler } from "react";
-import { ValidationErrorsType, OperatorPromptType, PromptView } from "./types";
+import { OperatorPromptType, PromptView, ValidationErrorsType } from "./types";
 
 export function stringifyError(error, fallback?) {
   if (typeof error === "string") return error;
@@ -77,6 +78,12 @@ export function getOperatorPromptConfigs(operatorPrompt: OperatorPromptType) {
   const validationErrorsStr = formatValidationErrors(
     operatorPrompt.validationErrors
   );
+  const loading = resolving || pendingResolve;
+  const disableSubmit = hasValidationErrors || resolving || pendingResolve;
+  const disabledReason = hasValidationErrors
+    ? "Cannot execute operator with validation errors\n\n" + validationErrorsStr
+    : "Cannot execute operator while validating form";
+  const onClose = onCancel || operatorPrompt.close;
 
   return {
     title,
@@ -99,6 +106,26 @@ export function getOperatorPromptConfigs(operatorPrompt: OperatorPromptType) {
     cancelButtonText,
     onSubmit,
     onCancel,
+    loading,
+    disableSubmit,
+    disabledReason,
+    onClose,
+  };
+}
+
+/**
+ * Params aware debounce
+ */
+export function memoizedDebounce(
+  func,
+  wait = 0,
+  options?: MemoizedDebounceOptions
+) {
+  const memoizedFunc = memoize(function () {
+    return debounce(func, wait, options);
+  }, options?.resolver);
+  return function () {
+    memoizedFunc.apply(this, arguments).apply(this, arguments);
   };
 }
 
@@ -108,3 +135,9 @@ function getPromptTitle(operatorPrompt) {
     : operatorPrompt?.outputFields;
   return definition?.view?.label;
 }
+
+type MemoizeResolver = (...args) => any;
+
+type MemoizedDebounceOptions = DebounceSettings & {
+  resolver: MemoizeResolver;
+};

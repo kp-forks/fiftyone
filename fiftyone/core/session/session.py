@@ -1,26 +1,20 @@
 """
 Session class for interacting with the FiftyOne App.
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
+
 from collections import defaultdict
-from dataclasses import asdict
 from functools import wraps
-
-try:
-    from importlib import metadata
-except ImportError:
-    import importlib_metadata as metadata
-
 import logging
 import os
-from packaging.requirements import Requirement
 import time
 import typing as t
-import webbrowser
 from uuid import uuid4
+import webbrowser
+
 
 try:
     import IPython.display
@@ -53,6 +47,7 @@ from fiftyone.core.session.events import (
     SelectSamples,
     SetColorScheme,
     SetDatasetColorScheme,
+    SetSample,
     SetSpaces,
     SetGroupSlice,
     StateUpdate,
@@ -78,10 +73,6 @@ logger = logging.getLogger(__name__)
 _session = None
 _server_services = {}
 _subscribed_sessions = defaultdict(set)
-
-_APP_DESKTOP_MESSAGE = """
-Desktop App launched.
-"""
 
 _APP_WEB_MESSAGE = """
 App launched. Point your web browser to http://localhost:{0}
@@ -130,8 +121,8 @@ If you're finding FiftyOne helpful, here's how you can get involved:
 |  ⭐⭐⭐ Give the project a star on GitHub ⭐⭐⭐
 |  https://github.com/voxel51/fiftyone
 |
-|  🚀🚀🚀 Join the FiftyOne Slack community 🚀🚀🚀
-|  https://slack.voxel51.com
+|  🚀🚀🚀 Join the FiftyOne Discord community 🚀🚀🚀
+|  https://community.voxel51.com/
 |
 """
 
@@ -139,13 +130,14 @@ If you're finding FiftyOne helpful, here's how you can get involved:
 def launch_app(
     dataset: fod.Dataset = None,
     view: fov.DatasetView = None,
+    sample_id: str = None,
+    group_id: str = None,
     spaces: Space = None,
     color_scheme: food.ColorScheme = None,
     plots: fop.PlotManager = None,
     port: int = None,
     address: str = None,
     remote: bool = False,
-    desktop: bool = None,
     browser: str = None,
     height: int = None,
     auto: bool = True,
@@ -161,8 +153,12 @@ def launch_app(
             :class:`fiftyone.core.view.DatasetView` to load
         view (None): an optional :class:`fiftyone.core.view.DatasetView` to
             load
-        spaces (None): an optional :class:`fiftyone.core.odm.workspace.Space` instance
-            defining a space configuration to load
+        sample_id (None): an optional :class:`fiftyone.core.sample.Sample` ID
+            to load in the modal
+        group_id (None): an optional :class:`fiftyone.core.groups.Group` ID
+            to load in the modal
+        spaces (None): an optional :class:`fiftyone.core.odm.workspace.Space`
+            instance defining a space configuration to load
         color_scheme (None): an optional
             :class:`fiftyone.core.odm.dataset.ColorScheme` defining a custom
             color scheme to use
@@ -175,9 +171,6 @@ def launch_app(
             ``fiftyone.config.default_app_address`` is used
         remote (False): whether this is a remote session, and opening the App
             should not be attempted
-        desktop (None): whether to launch the App in the browser (False) or as
-            a desktop App (True). If None, ``fiftyone.config.desktop_app`` is
-            used. Not applicable to notebook contexts
         browser (None): an optional browser to use to open the App. If None,
             the default browser will be used. Refer to list of supported
             browsers at https://docs.python.org/3/library/webbrowser.html
@@ -196,13 +189,14 @@ def launch_app(
     _session = Session(
         dataset=dataset,
         view=view,
+        sample_id=sample_id,
+        group_id=group_id,
         spaces=spaces,
         color_scheme=color_scheme,
         plots=plots,
         port=port,
         address=address,
         remote=remote,
-        desktop=desktop,
         browser=browser,
         height=height,
         auto=auto,
@@ -211,8 +205,6 @@ def launch_app(
 
     if _session.remote:
         logger.info(_REMOTE_INSTRUCTIONS.strip().format(_session.server_port))
-    elif _session.desktop:
-        logger.info(_APP_DESKTOP_MESSAGE.strip())
     elif focx.is_notebook_context():
         if not auto:
             logger.info(_APP_NOTEBOOK_MESSAGE.strip())
@@ -281,6 +273,14 @@ class Session(object):
         :attr:`Session.view` property of the session to your
         :class:`fiftyone.core.view.DatasetView`.
 
+    -   To load a specific sample in the modal, simply set the
+        :attr:`Session.sample_id` property of the session to the ID of the
+        :class:`fiftyone.core.sample.Sample`.
+
+    -   To load a specific group in the modal, simply set the
+        :attr:`Session.group_id` property of the session to the ID of the
+        :class:`fiftyone.core.groups.Group`.
+
     -   To attach/remove interactive plots, use the methods exposed on the
         :attr:`Session.plots` property of the session.
 
@@ -308,10 +308,15 @@ class Session(object):
             :class:`fiftyone.core.view.DatasetView` to load
         view (None): an optional :class:`fiftyone.core.view.DatasetView` to
             load
-        spaces (None): an optional :class:`fiftyone.core.odm.workspace.Space` instance
-            defining a space configuration to load
-        color_scheme (None): an optional :class:`fiftyone.core.odm.dataset.ColorScheme`
-            defining a custom color scheme to use
+        sample_id (None): an optional :class:`fiftyone.core.sample.Sample` ID
+            to load in the modal
+        group_id (None): an optional :class:`fiftyone.core.groups.Group` ID
+            to load in the modal
+        spaces (None): an optional :class:`fiftyone.core.odm.workspace.Space`
+            instance defining a space configuration to load
+        color_scheme (None): an optional
+            :class:`fiftyone.core.odm.dataset.ColorScheme` defining a custom
+            color scheme to use
         plots (None): an optional
             :class:`fiftyone.core.plots.manager.PlotManager` to connect to this
             session
@@ -321,9 +326,6 @@ class Session(object):
             ``fiftyone.config.default_app_address`` is used
         remote (False): whether this is a remote session, and opening the App
             should not be attempted
-        desktop (None): whether to launch the App in the browser (False) or as
-            a desktop App (True). If None, ``fiftyone.config.desktop_app`` is
-            used. Not applicable to notebook contexts (e.g., Jupyter and Colab)
         browser (None): an optional browser to use to open the App. If None,
             the default browser will be used. Refer to list of supported
             browsers at https://docs.python.org/3/library/webbrowser.html
@@ -340,18 +342,19 @@ class Session(object):
         self,
         dataset: t.Union[fod.Dataset, fov.DatasetView] = None,
         view: fov.DatasetView = None,
-        view_name: str = None,
+        sample_id: str = None,
+        group_id: str = None,
         spaces: Space = None,
         color_scheme: food.ColorScheme = None,
         plots: fop.PlotManager = None,
         port: int = None,
         address: str = None,
         remote: bool = False,
-        desktop: bool = None,
         browser: str = None,
         height: int = None,
         auto: bool = True,
         config: AppConfig = None,
+        view_name: str = None,
     ) -> None:
         focx.init_context()
 
@@ -394,13 +397,6 @@ class Session(object):
         self._disable_wait_warning = False
         self._notebook_cells: t.Dict[str, fosn.NotebookCell] = {}
 
-        if desktop is None:
-            desktop = (
-                fo.config.desktop_app
-                if not focx.is_notebook_context()
-                else False
-            )
-
         self.plots = plots
 
         final_view_name = view_name
@@ -411,17 +407,19 @@ class Session(object):
             spaces = default_workspace_factory()
 
         self._state = StateDescription(
-            config=config,
             dataset=view._root_dataset if view is not None else dataset,
             view=view,
             view_name=final_view_name,
+            sample_id=sample_id,
+            group_id=group_id,
+            group_slice=_pull_group_slice(dataset, view),
             spaces=spaces,
             color_scheme=build_color_scheme(color_scheme, dataset, config),
+            config=config,
         )
         self._client = fosc.Client(
             address=address,
             auto=auto,
-            desktop=desktop,
             port=port,
             remote=remote,
             start_time=self._get_time(),
@@ -441,21 +439,6 @@ class Session(object):
                     "Remote sessions cannot be run from a notebook"
                 )
 
-            return
-
-        if self.desktop:
-            if focx.is_notebook_context():
-                raise ValueError(
-                    "Cannot open a Desktop App instance from a %s notebook"
-                    % focx._get_context()
-                )
-
-            if not focn.DEV_INSTALL:
-                import_desktop()
-
-            self._app_service = fos.AppService(
-                server_port=port, server_address=address
-            )
             return
 
         if not focx.is_notebook_context():
@@ -552,11 +535,6 @@ class Session(object):
         return self._client.remote
 
     @property
-    def desktop(self) -> bool:
-        """Whether the session is connected to a desktop App."""
-        return self._client.desktop
-
-    @property
     def url(self) -> str:
         """The URL of the session."""
         return focx.get_url(
@@ -600,6 +578,36 @@ class Session(object):
         self._state.config = config
 
     @property
+    def group_id(self) -> t.Optional[str]:
+        """The current :class:`fiftyone.core.groups.Group` ID in the modal, if
+        any.
+        """
+        return self._state.group_id
+
+    @group_id.setter  # type: ignore
+    def group_id(self, group_id: t.Optional[str]) -> None:
+        if group_id is not None and not isinstance(group_id, str):
+            raise ValueError(f"unexpected group id value '{group_id}'")
+
+        self._state.group_id = group_id
+        self._client.send_event(SetSample(group_id=group_id))
+
+    @property
+    def sample_id(self) -> t.Optional[str]:
+        """The current :class:`fiftyone.core.sample.Sample` ID in the modal, if
+        any.
+        """
+        return self._state.sample_id
+
+    @sample_id.setter  # type: ignore
+    def sample_id(self, sample_id: t.Optional[str]) -> None:
+        if sample_id is not None and not isinstance(sample_id, str):
+            raise ValueError(f"unexpected sample id value '{sample_id}'")
+
+        self._state.sample_id = sample_id
+        self._client.send_event(SetSample(sample_id=sample_id))
+
+    @property
     def spaces(self) -> Space:
         """The layout state for the session."""
         return self._state.spaces
@@ -619,6 +627,11 @@ class Session(object):
         self._client.send_event(SetSpaces(spaces=spaces.to_dict()))
 
     def load_workspace(self, workspace: str) -> None:
+        """Loads the given saved workspace.
+
+        Args:
+            workspace: the name of a saved workspace
+        """
         spaces = self.dataset.load_workspace(workspace)
         self.spaces = spaces
 
@@ -678,14 +691,16 @@ class Session(object):
         else:
             self._state.group_slice = None
 
-        self._state.dataset = dataset
-        self._state.view = None
-        self._state.spaces = default_workspace_factory()
         self._state.color_scheme = build_color_scheme(
             None, dataset, self.config
         )
+        self._state.dataset = dataset
+        self._state.group_id = None
+        self._state.sample_id = None
+        self._state.spaces = default_workspace_factory()
         self._state.selected = []
         self._state.selected_labels = []
+        self._state.view = None
 
     @property
     def view(self) -> t.Union[fov.DatasetView, None]:
@@ -725,6 +740,8 @@ class Session(object):
             self._state.view = view
             self._state.view_name = view.name
 
+        self._state.group_id = None
+        self._state.sample_id = None
         self._state.selected = []
         self._state.selected_labels = []
 
@@ -954,10 +971,13 @@ class Session(object):
             type_ = "colab"
         elif focx.is_databricks_context():
             type_ = "databricks"
-        elif self.desktop:
-            type_ = "desktop"
         else:
             type_ = None
+
+        if self.group_id:
+            elements.append(("Group:", self.group_id))
+        elif self.sample_id:
+            elements.append(("Sample:", self.sample_id))
 
         if type_ is None:
             elements.append(("Session URL:", self.url))
@@ -982,7 +1002,6 @@ class Session(object):
 
         -   Notebooks: calls :meth:`Session.show` to open a new App window in
             the output of your current cell
-        -   Desktop: opens the desktop App, if necessary
         -   Other (non-remote): opens the App in a new browser tab
         """
         _register_session(self)
@@ -997,17 +1016,13 @@ class Session(object):
             self.show()
             return
 
-        if self.desktop:
-            self._app_service.start()
-            return
-
         self.open_tab()
 
     def open_tab(self) -> None:
         """Opens the App in a new tab of your browser.
 
-        This method can be called from Jupyter notebooks and in desktop App
-        mode to override the default location of the App.
+        This method can be called from Jupyter notebooks to override the
+        default location of the App.
         """
         if self.remote:
             logger.warning("Remote sessions cannot open new App windows")
@@ -1036,7 +1051,7 @@ class Session(object):
         Args:
             height (None): a height, in pixels, for the App
         """
-        if not focx.is_notebook_context() or self.desktop:
+        if not focx.is_notebook_context():
             return
 
         self.freeze()
@@ -1091,11 +1106,8 @@ class Session(object):
     def wait(self, wait: float = 3) -> None:
         """Blocks execution until the App is closed by the user.
 
-        For browser Apps, all connected windows (tabs) must be closed before
-        this method will unblock.
-
-        For desktop Apps, all positive ``wait`` values are equivalent;
-        execution will immediately unblock when the App is closed.
+        All connected windows (tabs) must be closed before this method will
+        unblock.
 
         Args:
             wait (3): the number of seconds to wait for a new App connection
@@ -1110,21 +1122,16 @@ class Session(object):
             if wait < 0:
                 while True:
                     time.sleep(10)
-            elif self.remote or not self._client.desktop:
+            else:
                 self._wait_closed = False
                 while not self._wait_closed:
                     time.sleep(wait)
-            else:
-                self._app_service.wait()
         except KeyboardInterrupt:
             self._disable_wait_warning = True
             raise
 
     def close(self) -> None:
         """Closes the session and terminates the App, if necessary."""
-        if self.desktop:
-            self._app_service.stop()
-
         if self._client.is_open and focx.is_notebook_context():
             self.freeze()
 
@@ -1191,6 +1198,12 @@ def _attach_listeners(session: "Session"):
     )
     session._client.add_event_listener("set_group_slice", on_set_group_slice)
 
+    def on_set_sample(event: SetSample) -> None:
+        session._state.sample_id = event.sample_id
+        session._state.group_id = event.group_id
+
+    session._client.add_event_listener("set_sample", on_set_sample)
+
     on_set_spaces: t.Callable[[SetSpaces], None] = lambda event: setattr(
         session._state,
         "spaces",
@@ -1218,47 +1231,6 @@ def _attach_listeners(session: "Session"):
 
         session._client.add_event_listener(
             "reactivate_notebook_cell", on_reactivate_notebook_cell
-        )
-
-
-def import_desktop() -> None:
-    """Imports :mod:`fiftyone.desktop`.
-
-    Raises:
-        RuntimeError: if a matching ``fiftyone-desktop`` version is not
-            installed
-    """
-    try:
-        # pylint: disable=unused-import
-        import fiftyone.desktop
-    except ImportError as e:
-        raise RuntimeError(
-            "You must `pip install fiftyone[desktop]` in order to launch the "
-            "desktop App"
-        ) from e
-
-    fiftyone_dist = metadata.distribution("fiftyone")
-    desktop_dist = metadata.distribution("fiftyone-desktop")
-
-    # Get `fiftyone-desktop` requirement for current `fiftyone` install
-    desktop_req = [
-        req
-        for req in fiftyone_dist.requires
-        if req.startswith("fiftyone-desktop")
-    ][0]
-    desktop_req = Requirement(desktop_req.split(";")[0])
-
-    if not desktop_req.specifier.contains(desktop_dist.version):
-        raise RuntimeError(
-            "fiftyone==%s requires fiftyone-desktop%s, but you have "
-            "fiftyone-desktop==%s installed.\n"
-            "Run `pip install fiftyone[desktop]` to install the proper "
-            "desktop package version"
-            % (
-                fiftyone_dist.version,
-                desktop_req.specifier,
-                desktop_dist.version,
-            )
         )
 
 
@@ -1316,3 +1288,15 @@ def _on_refresh(session: Session, state: t.Optional[StateDescription]):
 
     if session.dataset is not None:
         session.dataset.reload()
+
+
+def _pull_group_slice(
+    dataset: t.Optional[fod.Dataset], view: t.Optional[fov.DatasetView]
+) -> t.Union[None, str]:
+    if view is not None:
+        return view.group_slice
+
+    if dataset is not None:
+        return dataset.group_slice
+
+    return None

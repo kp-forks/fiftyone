@@ -1,4 +1,4 @@
-import { ModalSample } from "@fiftyone/state";
+import type { ModalSample } from "@fiftyone/state";
 import { PathType, determinePathType } from "@fiftyone/utilities";
 import { folder } from "leva";
 import {
@@ -10,15 +10,16 @@ import {
   MeshStandardMaterial,
   PointsMaterial,
   Vector3,
-  Vector3Tuple,
+  type Vector3Tuple,
 } from "three";
-import {
+import type {
   FoMeshBasicMaterialProps,
   FoMeshLambertMaterialProps,
   FoMeshPhongMaterialProps,
   FoScene,
   FoSceneNode,
 } from "../hooks";
+import * as paths from "../../../utilities/src/paths";
 
 export const getAssetUrlForSceneNode = (node: FoSceneNode): string => {
   if (!node.asset) return null;
@@ -125,7 +126,7 @@ export const getMediaPathForFo3dSample = (
 
 export const getFo3dRoot = (fo3dPath: string) => {
   // remove filename and the last slash to get the root
-  const root = fo3dPath.replace(/\/[^/]*\.fo3d$/, "/");
+  const root = fo3dPath.replace(/(\/[^/]*\.fo3d$|\\[^\\]*\.fo3d$)/, "/");
 
   return root;
 };
@@ -145,7 +146,7 @@ export const getResolvedUrlForFo3dAsset = (
     return assetUrl;
   }
 
-  return fo3dRoot + assetUrl;
+  return paths.joinPaths(fo3dRoot, assetUrl);
 };
 
 export const getThreeMaterialFromFo3dMaterial = (

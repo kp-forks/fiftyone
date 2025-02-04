@@ -2,7 +2,7 @@
 """
 Installs the ``fiftyone-db`` package.
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
@@ -37,6 +37,19 @@ LINUX_DOWNLOADS = {
             "x86_64": "https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-amazon2023-7.0.2.tgz",
         },
     },
+    "centos": {
+        "7": {
+            "x86_64": "https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-rhel70-5.0.4.tgz",
+        },
+        "8": {
+            "aarch64": "https://fastdl.mongodb.org/linux/mongodb-linux-aarch64-rhel82-5.0.22.tgz",
+            "x86_64": "https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-rhel80-5.0.4.tgz",
+        },
+        "9": {
+            "aarch64": "https://fastdl.mongodb.org/linux/mongodb-linux-aarch64-rhel90-7.0.2.tgz",
+            "x86_64": "https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-rhel90-7.0.2.tgz",
+        },
+    },
     "debian": {
         "9": {
             "x86_64": "https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-debian92-5.0.22.tgz",
@@ -50,6 +63,34 @@ LINUX_DOWNLOADS = {
         "12": {
             "aarch64": "https://fastdl.mongodb.org/linux/mongodb-linux-aarch64-ubuntu2204-6.0.5.tgz",
             "x86_64": "https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-ubuntu2204-6.0.5.tgz",
+        },
+    },
+    "fedora": {
+        "4": {
+            "aarch64": "https://fastdl.mongodb.org/linux/mongodb-linux-aarch64-rhel90-7.0.2.tgz",
+            "x86_64": "https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-rhel90-7.0.2.tgz",
+        },
+    },
+    "pop": {
+        "18": {
+            "aarch64": "https://fastdl.mongodb.org/linux/mongodb-linux-aarch64-ubuntu1804-5.0.4.tgz",
+            "x86_64": "https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-ubuntu1804-5.0.4.tgz",
+        },
+        "20": {
+            "aarch64": "https://fastdl.mongodb.org/linux/mongodb-linux-aarch64-ubuntu2004-5.0.4.tgz",
+            "x86_64": "https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-ubuntu2004-5.0.4.tgz",
+        },
+        "22": {
+            "aarch64": "https://fastdl.mongodb.org/linux/mongodb-linux-aarch64-ubuntu2204-6.0.5.tgz",
+            "x86_64": "https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-ubuntu2204-6.0.5.tgz",
+        },
+        "23": {
+            "aarch64": "https://fastdl.mongodb.org/linux/mongodb-linux-aarch64-ubuntu2204-7.0.4.tgz",
+            "x86_64": "https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-ubuntu2204-7.0.4.tgz",
+        },
+        "24": {
+            "aarch64": "https://fastdl.mongodb.org/linux/mongodb-linux-aarch64-ubuntu2204-7.0.4.tgz",
+            "x86_64": "https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-ubuntu2204-7.0.4.tgz",
         },
     },
     "rhel": {
@@ -82,12 +123,17 @@ LINUX_DOWNLOADS = {
             "aarch64": "https://fastdl.mongodb.org/linux/mongodb-linux-aarch64-ubuntu2204-7.0.4.tgz",
             "x86_64": "https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-ubuntu2204-7.0.4.tgz",
         },
+        "24": {
+            "aarch64": "https://fastdl.mongodb.org/linux/mongodb-linux-aarch64-ubuntu2404-8.0.4.tgz",
+            "x86_64": "https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-ubuntu2404-8.0.4.tgz",
+        },
     },
 }
 
 WINDOWS = "Windows"
 WINDOWS_DOWNLOADS = {
-    "x86_64": "https://fastdl.mongodb.org/windows/mongodb-windows-x86_64-5.0.4.zip"
+    "x86_64": "https://fastdl.mongodb.org/windows/mongodb-windows-x86_64-5.0.4.zip",
+    "amd64": "https://fastdl.mongodb.org/windows/mongodb-windows-x86_64-5.0.4.zip",
 }
 
 
@@ -102,7 +148,11 @@ def _get_linux_download():
         # filter empty lines
         d = dict(line for line in reader if line)
 
-    for k, v in LINUX_DOWNLOADS[d["ID"]].items():
+    key = d["ID"].lower()
+    if key not in LINUX_DOWNLOADS:
+        key = d["ID_LIKE"].lower()
+
+    for k, v in LINUX_DOWNLOADS[key].items():
         if d["VERSION_ID"].startswith(k):
             return v[MACHINE]
 
@@ -113,7 +163,7 @@ def _get_download():
             return DARWIN_DOWNLOADS[MACHINE]
 
         if SYSTEM == WINDOWS:
-            return WINDOWS_DOWNLOADS[MACHINE]
+            return WINDOWS_DOWNLOADS[MACHINE.lower()]
 
         if SYSTEM == LINUX:
             return _get_linux_download()
@@ -125,7 +175,7 @@ def _get_download():
 MONGODB_BINARIES = ["mongod"]
 
 
-VERSION = "1.1.1"
+VERSION = "1.2.0"
 
 
 def get_version():
@@ -280,11 +330,10 @@ setup(
         "Operating System :: POSIX :: Linux",
         "Operating System :: Microsoft :: Windows",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.7",
-        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
     ],
-    python_requires=">=3.7",
+    python_requires=">=3.9",
     cmdclass=cmdclass,
 )

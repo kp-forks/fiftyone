@@ -16,7 +16,7 @@ import {
 import { StrictField } from "@fiftyone/utilities";
 import { DefaultValue, atom, atomFamily, selector } from "recoil";
 import { ModalSample } from "..";
-import { SPACES_DEFAULT, sessionAtom } from "../session";
+import { GRID_SPACES_DEFAULT, sessionAtom } from "../session";
 import { collapseFields } from "../utils";
 import { getBrowserStorageEffectForKey } from "./customEffects";
 import { groupMediaTypesSet } from "./groups";
@@ -76,11 +76,24 @@ export const cropToContent = atomFamily<boolean, boolean>({
 export const fullscreen = atom<boolean>({
   key: "fullscreen",
   default: false,
+  effects: [
+    getBrowserStorageEffectForKey("fullscreen", { valueClass: "boolean" }),
+  ],
 });
 
 export const showOverlays = atom<boolean>({
   key: "showOverlays",
   default: true,
+});
+
+export const showModalNavigationControls = atom<boolean>({
+  key: "showModalNavigationControls",
+  default: true,
+  effects: [
+    getBrowserStorageEffectForKey("showModalNavigationControls", {
+      valueClass: "boolean",
+    }),
+  ],
 });
 
 export const activePlot = atom<string>({
@@ -224,14 +237,50 @@ export const similaritySorting = atom<boolean>({
   default: false,
 });
 
-export const extendedSelection = atom<{ selection: string[]; scope?: string }>({
-  key: "extendedSelection",
-  default: { selection: null },
-});
-export const extendedSelectionOverrideStage = atom<any>({
-  key: "extendedSelectionOverrideStage",
-  default: null,
-});
+export const extendedSelection = (() => {
+  let current = { selection: null };
+  return graphQLSyncFragmentAtom<
+    datasetFragment$key,
+    { selection: string[]; scope?: string }
+  >(
+    {
+      fragments: [datasetFragment],
+      keys: ["dataset"],
+      default: { selection: null },
+      read: (data, previous) => {
+        if (previous && data.id !== previous?.id) {
+          current = { selection: null };
+        }
+
+        return current;
+      },
+    },
+    {
+      key: "extendedSelection",
+    }
+  );
+})();
+
+export const extendedSelectionOverrideStage = (() => {
+  let current = null;
+  return graphQLSyncFragmentAtom<datasetFragment$key, any>(
+    {
+      fragments: [datasetFragment],
+      keys: ["dataset"],
+      default: null,
+      read: (data, previous) => {
+        if (previous && data.id !== previous?.id) {
+          current = null;
+        }
+
+        return current;
+      },
+    },
+    {
+      key: "extendedSelectionOverrideStage",
+    }
+  );
+})();
 
 export const similarityParameters = (() => {
   let update = false;
@@ -288,12 +337,12 @@ export const lookerPanels = atom({
   },
 });
 
-export const onlyPcd = selector<boolean>({
-  key: "onlyPcd",
+export const only3d = selector<boolean>({
+  key: "only3d",
   get: ({ get }) => {
     const set = get(groupMediaTypesSet);
-    const hasPcd = set.has("point_cloud");
-    return set.size === 1 && hasPcd;
+    const has3d = set.has("point_cloud") || set.has("three_d");
+    return set.size === 1 && has3d;
   },
 });
 
@@ -340,7 +389,7 @@ export const readOnly = sessionAtom({
 
 export const sessionSpaces = sessionAtom({
   key: "sessionSpaces",
-  default: SPACES_DEFAULT,
+  default: GRID_SPACES_DEFAULT,
 });
 
 export const colorScheme = sessionAtom({
@@ -366,4 +415,14 @@ export const hideNoneValuedFields = atom<boolean>({
 export const noneValuedPaths = atom<Record<string, Set<string>>>({
   key: "noneValuedPaths",
   default: {},
+});
+
+export const escapeKeyHandlerIdsAtom = atom<Set<string>>({
+  key: "escapeKeyHandlerIdsAtom",
+  default: new Set(),
+});
+
+export const editingFieldAtom = atom<boolean>({
+  key: "editingFieldAtom",
+  default: false,
 });

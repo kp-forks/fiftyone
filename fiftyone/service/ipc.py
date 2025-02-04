@@ -1,7 +1,7 @@
 """
 Inter-process communication handling.
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
@@ -109,7 +109,7 @@ def send_request(port, message):
     Returns:
         response (any type)
     """
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.connect(("localhost", port))
-    pickle.dump(message, s.makefile("wb"))
-    return pickle.load(s.makefile("rb"))
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.connect(("localhost", port))
+        pickle.dump(message, s.makefile("wb"))
+        return pickle.load(s.makefile("rb"))

@@ -1,13 +1,13 @@
 import { test as base } from "src/oss/fixtures";
 import { GridActionsRowPom } from "src/oss/poms/action-row/grid-actions-row";
+import { GridPanelPom } from "src/oss/poms/panels/grid-panel";
 import { HistogramPom } from "src/oss/poms/panels/histogram-panel";
-import { PanelPom } from "src/oss/poms/panels/panel";
 import { getUniqueDatasetNameWithPrefix } from "src/oss/utils";
 
 const test = base.extend<{
   actionsRow: GridActionsRowPom;
   histogram: HistogramPom;
-  panel: PanelPom;
+  panel: GridPanelPom;
 }>({
   actionsRow: async ({ page, eventUtils }, use) => {
     await use(new GridActionsRowPom(page, eventUtils));
@@ -16,19 +16,24 @@ const test = base.extend<{
     await use(new HistogramPom(page, eventUtils));
   },
   panel: async ({ page }, use) => {
-    await use(new PanelPom(page));
+    await use(new GridPanelPom(page));
   },
 });
 
-test.describe("Display Options", () => {
-  const datasetName = getUniqueDatasetNameWithPrefix("quickstart-groups");
+const datasetName = getUniqueDatasetNameWithPrefix("quickstart-groups");
 
-  test.beforeAll(async ({ fiftyoneLoader }) => {
-    await fiftyoneLoader.loadZooDataset("quickstart-groups", datasetName, {
-      max_samples: 12,
-    });
+test.afterAll(async ({ foWebServer }) => {
+  await foWebServer.stopWebServer();
+});
+
+test.beforeAll(async ({ fiftyoneLoader, foWebServer }) => {
+  await foWebServer.startWebServer();
+  await fiftyoneLoader.loadZooDataset("quickstart-groups", datasetName, {
+    max_samples: 12,
   });
+});
 
+test.describe.serial("Display Options", () => {
   test.beforeEach(async ({ page, fiftyoneLoader }) => {
     await fiftyoneLoader.waitUntilGridVisible(page, datasetName);
   });

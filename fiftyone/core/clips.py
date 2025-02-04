@@ -1,7 +1,7 @@
 """
 Clips views.
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
@@ -47,13 +47,12 @@ class ClipView(fos.SampleView):
         return ObjectId(self._doc.sample_id)
 
     def _save(self, deferred=False):
-        if deferred:
-            raise NotImplementedError(
-                "Clips views do not support save contexts"
-            )
+        sample_ops, frame_ops = super()._save(deferred=deferred)
 
-        super()._save(deferred=deferred)
-        self._view._sync_source_sample(self)
+        if not deferred:
+            self._view._sync_source_sample(self)
+
+        return sample_ops, frame_ops
 
 
 class ClipsView(fov.DatasetView):
@@ -74,6 +73,16 @@ class ClipsView(fov.DatasetView):
         clips_dataset: the :class:`fiftyone.core.dataset.Dataset` that serves
             the clips in this view
     """
+
+    __slots__ = (
+        "_classification_field",
+        "_source_collection",
+        "_clips_stage",
+        "_clips_dataset",
+        "__stages",
+        "__media_type",
+        "__name",
+    )
 
     def __init__(
         self,
@@ -449,6 +458,13 @@ class TrajectoriesView(ClipsView):
             the clips in this view
     """
 
+    __slots__ = (
+        "_num_trajectory_stages",
+        "__stages",
+        "__media_type",
+        "__name",
+    )
+
     def __init__(
         self,
         source_collection,
@@ -586,6 +602,8 @@ def make_clips_dataset(
     min_len=0,
     trajectories=False,
     name=None,
+    persistent=False,
+    _generated=False,
 ):
     """Creates a dataset that contains one sample per clip defined by the
     given field or expression in the collection.
@@ -650,6 +668,8 @@ def make_clips_dataset(
             trajectory defined by their ``(label, index)``. Only applicable
             when ``field_or_expr`` is a frame-level field
         name (None): a name for the dataset
+        persistent (False): whether the dataset should persist in the database
+            after the session terminates
 
     Returns:
         a :class:`fiftyone.core.dataset.Dataset`
@@ -675,9 +695,22 @@ def make_clips_dataset(
     else:
         clips_type = "manual"
 
+    if _generated:
+        _name = name
+        _persistent = persistent
+    else:
+        # We first create a temporary dataset with samples representing the
+        # clips; then we clone it to pull in the corresponding frames
+        _name = None
+        _persistent = False
+
     dataset = fod.Dataset(
-        name=name, _clips=True, _src_collection=sample_collection
+        name=_name,
+        persistent=_persistent,
+        _clips=True,
+        _src_collection=sample_collection,
     )
+
     dataset.media_type = fom.VIDEO
     dataset.add_sample_field("sample_id", fof.ObjectIdField)
     dataset.add_sample_field("support", fof.FrameSupportField)
@@ -750,6 +783,13 @@ def make_clips_dataset(
             other_fields=other_fields,
         )
 
+    if not _generated:
+        # Clone so that dataset no longer shares the same underlying frames
+        # collection as the input collection
+        _dataset = dataset
+        dataset = _dataset.clone(name=name, persistent=persistent)
+        _dataset.delete()
+
     return dataset
 
 
@@ -792,6 +832,8 @@ def _write_support_clips(
         "filepath": True,
         "metadata": True,
         "tags": True,
+        "created_at": True,
+        "last_modified_at": True,
         "support": "$" + field.name,
     }
 
@@ -839,6 +881,8 @@ def _write_temporal_detection_clips(
         "filepath": True,
         "metadata": True,
         "tags": True,
+        "created_at": True,
+        "last_modified_at": True,
         field: True,
     }
 
@@ -911,6 +955,8 @@ def _write_trajectories(dataset, src_collection, field, other_fields=None):
             "filepath": True,
             "metadata": True,
             "tags": True,
+            "created_at": True,
+            "last_modified_at": True,
             field: True,
         }
 
@@ -950,9 +996,12 @@ def _write_expr_clips(
         _, path = src_collection._get_label_field_path(expr)
         leaf, _ = src_collection._handle_frame_field(path)
         expr = F(leaf).length() > 0
-
-    if isinstance(expr, dict):
+    elif isinstance(expr, dict):
         expr = foe.ViewExpression(expr)
+    else:
+        # map() modifies the expression in-place and we don't want to cause
+        # side effects to the caller
+        expr = deepcopy(expr)
 
     frame_numbers, bools = src_collection.values(
         ["frames.frame_number", F("frames").map(expr)]
@@ -992,6 +1041,8 @@ def _write_manual_clips(dataset, src_collection, clips, other_fields=None):
             "support": "$" + _tmp_field,
             "metadata": True,
             "tags": True,
+            "created_at": True,
+            "last_modified_at": True,
         }
 
         if other_fields:

@@ -20,7 +20,7 @@ Prerequisites
 -------------
 
 You will need a working Python installation. FiftyOne currently requires
-**Python 3.7 - 3.12**
+**Python 3.9 - 3.11**
 
 
 On Linux, we recommend installing Python through your system package manager
@@ -103,31 +103,6 @@ Note that if you are running this code in a script, you must include
 :meth:`session.wait() <fiftyone.core.session.Session.wait>` to block execution
 until you close the App. See :ref:`this page <creating-an-app-session>` for
 more information.
-
-.. _installing-fiftyone-desktop:
-
-FiftyOne Desktop App
---------------------
-
-By default, the :ref:`FiftyOne App <fiftyone-app>` will be opened in your web
-browser when you launch it.
-
-However, we also provide a desktop version of the FiftyOne App that you can
-install as follows:
-
-.. code-block:: shell
-
-  pip install "fiftyone[desktop]"
-
-.. note::
-
-    Commands like :func:`launch_app() <fiftyone.core.session.launch_app>`
-    provide an optional ``desktop`` flag that let you control whether to launch
-    the App in your browser or as a desktop App.
-
-    You can also set the ``desktop_app`` flag of your
-    :ref:`FiftyOne config <configuring-fiftyone>` to use the desktop App by
-    default.
 
 .. _install-troubleshooting:
 
@@ -219,15 +194,6 @@ option to ``pip install``:
 
    pip install --upgrade fiftyone
 
-If you use the desktop App, you should also run:
-
-.. code-block:: shell
-
-   pip install "fiftyone[desktop]"
-
-to ensure that you have the proper version of the desktop App installed for
-your current FiftyOne version.
-
 .. note::
 
   New versions of FiftyOne occasionally introduce data model changes that
@@ -241,6 +207,12 @@ your current FiftyOne version.
   :ref:`custom/shared MongoDB database <configuring-mongodb-connection>`, you
   can use :ref:`database admin privileges <database-migrations>` to control
   which clients are allowed to upgrade your FiftyOne deployment.
+
+.. note::
+
+  If you are a FiftyOne 1.2.0 or lower user with an Ubuntu 24 operating system, 
+  you will need to 
+  :ref:`upgrade your mongodb binaries <mongodb-7-to-8>`.
 
 .. _downgrading-fiftyone:
 
@@ -296,9 +268,3 @@ FiftyOne and all of its subpackages can be uninstalled with:
 .. code-block:: shell
 
    pip uninstall fiftyone fiftyone-brain fiftyone-db
-
-If you installed the optional desktop App, you can uninstall it via:
-
-.. code-block:: shell
-
-   pip uninstall fiftyone-desktop

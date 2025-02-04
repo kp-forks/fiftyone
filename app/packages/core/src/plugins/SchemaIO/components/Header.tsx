@@ -1,8 +1,8 @@
+import { HelpTooltip, Markdown } from "@fiftyone/components";
 import { Box, Stack, StackProps, Typography } from "@mui/material";
 import React from "react";
-import { ErrorView, HelpTooltip } from ".";
+import { ErrorView } from ".";
 import { getComponentProps } from "../utils";
-import Markdown from "./Markdown";
 
 export default function Header(props: HeaderProps) {
   const {
@@ -65,9 +65,11 @@ export default function Header(props: HeaderProps) {
             sx={{ display: "flex", alignItems: "center" }}
             {...getComponentProps(viewProps, "label")}
           >
-            <Markdown {...getComponentProps(viewProps, "label.markdown")}>
-              {label}
-            </Markdown>
+            {label && (
+              <Markdown {...getComponentProps(viewProps, "label.markdown")}>
+                {label}
+              </Markdown>
+            )}
             {descriptionView === "tooltip" && (
               <HelpTooltip
                 title={description}

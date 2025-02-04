@@ -39,16 +39,28 @@ on your data quickly and easily.
     :button_link: using_views.html
 
 .. customcalloutitem::
+    :header: Grouped datasets
+    :description: Use grouped datasets to represent your multiview image, video, and point cloud data.
+    :button_text: Learn more about grouped datasets
+    :button_link: groups.html
+
+.. customcalloutitem::
     :header: Using the App
     :description: Visualize your datasets in the FiftyOne App and interactively search, sort, and filter them.
     :button_text: Learn more about the App
     :button_link: app.html
 
 .. customcalloutitem::
-    :header: Grouped datasets
-    :description: Use grouped datasets to represent your multiview image, video, and point cloud data.
-    :button_text: Learn more about grouped datasets
-    :button_link: groups.html
+    :header: Annotating datasets
+    :description: Use builtin or custom integrations to add or edit labels on your FiftyOne datasets.
+    :button_text: Learn more about annotations
+    :button_link: annotation.html
+
+.. customcalloutitem::
+    :header: Evaluating models  __SUB_NEW__
+    :description: Use FiftyOne's builtin methods to evaluate your models and analyze their strengths and weaknesses.
+    :button_text: Learn more about evaluating models
+    :button_link: evaluation.html
 
 .. customcalloutitem::
     :header: Using aggregations
@@ -63,18 +75,6 @@ on your data quickly and easily.
     :button_link: plots.html
 
 .. customcalloutitem::
-    :header: Annotating datasets
-    :description: Use builtin or custom integrations to add or edit labels on your FiftyOne datasets.
-    :button_text: Learn more about annotations
-    :button_link: annotation.html
-
-.. customcalloutitem::
-    :header: Evaluating models
-    :description: Use FiftyOne's builtin methods to evaluate your models and analyze their strengths and weaknesses.
-    :button_text: Learn more about evaluating models
-    :button_link: evaluation.html
-
-.. customcalloutitem::
     :header: Exporting datasets
     :description: Export datasets to disk in any number of common formats, or in your own custom format.
     :button_text: Learn more about exporting datasets
@@ -85,24 +85,6 @@ on your data quickly and easily.
     :description: Render labels on the samples in your FiftyOne dataset with a single line of code.
     :button_text: Learn more about drawing labels
     :button_link: draw_labels.html
-
-.. customcalloutitem::
-    :header: FiftyOne Dataset Zoo
-    :description: A collection of popular datasets that you can load into FiftyOne with a single command.
-    :button_text: Check out the Dataset Zoo
-    :button_link: dataset_zoo/index.html
-
-.. customcalloutitem::
-    :header: FiftyOne Model Zoo
-    :description: A collection of popular models that you can apply to your FiftyOne datasets.
-    :button_text: Check out the Model Zoo
-    :button_link: model_zoo/index.html
-
-.. customcalloutitem::
-    :header: FiftyOne Brain
-    :description: Use the FiftyOne Brain to automatically get insights into your datasets.
-    :button_text: Learn more about the FiftyOne Brain
-    :button_link: brain.html
 
 .. customcalloutitem::
     :header: Configuring FiftyOne
@@ -129,13 +111,10 @@ on your data quickly and easily.
     Dataset views <using_views>
     Using the App <app>
     Grouped datasets <groups>
+    Annotating datasets <annotation>
+    Evaluating models __SUB_NEW__ <evaluation>
     Using aggregations <using_aggregations>
     Interactive plots <plots>
-    Annotating datasets <annotation>
-    Evaluating models <evaluation>
     Exporting datasets <export_datasets>
     Drawing labels on samples <draw_labels>
-    FiftyOne Dataset Zoo <dataset_zoo/index>
-    FiftyOne Model Zoo <model_zoo/index>
-    FiftyOne Brain <brain>
     Configuring FiftyOne <config>

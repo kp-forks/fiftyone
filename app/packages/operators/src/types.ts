@@ -227,6 +227,7 @@ export class Property {
     this.invalid = options?.invalid;
     this.errorMessage = options?.errorMessage;
     this.view = options?.view;
+    this.onChange = options?.on_change;
   }
   type: ANY_TYPE;
   description?: string;
@@ -235,6 +236,7 @@ export class Property {
   view?: View;
   invalid?: boolean;
   errorMessage?: string;
+  onChange?: string;
 
   public resolver: (property: Property, ctx: ExecutionContext) => Property;
   static fromJSON(json: any) {
@@ -250,6 +252,7 @@ export class Property {
       view: this.view,
       invalid: this.invalid,
       errorMessage: this.errorMessage,
+      onChange: this.onChange,
     };
   }
 }
@@ -780,6 +783,24 @@ export class TupleView extends View {
 }
 
 /**
+ * Operator class for describing a tree node selection {@link View} for an
+ * operator type.
+ */
+export class TreeSelectionView extends View {
+  items: Array<View>;
+  constructor(options: ViewProps) {
+    super(options);
+    this.name = "TreeSelectionView";
+  }
+
+  static fromJSON(json) {
+    return new TreeSelectionView({
+      ...json,
+    });
+  }
+}
+
+/**
  * Operator class for describing a code block {@link View} for an
  * operator type.
  */
@@ -1048,6 +1069,29 @@ export class MarkdownView extends View {
 }
 
 /**
+ * Operator class for rendering a status button.
+ */
+export class StatusButtonView extends View {
+  constructor(options: ViewProps) {
+    super(options);
+    this.name = "StatusButtonView";
+  }
+  static fromJSON(json) {
+    return new StatusButtonView(json);
+  }
+}
+
+export class MediaPlayerView extends View {
+  constructor(options: ViewProps) {
+    super(options);
+    this.name = "MediaPlayerView";
+  }
+  static fromJSON(json) {
+    return new MediaPlayerView(json);
+  }
+}
+
+/**
  * Operator class for interacting with files.
  */
 
@@ -1099,6 +1143,20 @@ export class FieldView extends View {
 }
 
 /**
+ * Operator class for describing a TextView {@link View} for an
+ * operator type.
+ */
+export class TextView extends View {
+  constructor(options: ViewProps) {
+    super(options);
+    this.name = "TextView";
+  }
+  static fromJSON(json) {
+    return new TextView(json);
+  }
+}
+
+/**
  * Operator class for describing a TextFieldView {@link View} for an
  * operator type.
  */
@@ -1124,6 +1182,76 @@ export class LazyFieldView extends View {
   }
   static fromJSON(json) {
     return new LazyFieldView(json);
+  }
+}
+
+/**
+ * Operator class for describing a IconButtonView {@link Button} for an
+ * operator type.
+ */
+export class IconButtonView extends Button {
+  constructor(options: ViewProps) {
+    super(options);
+    this.name = "IconButtonView";
+  }
+  static fromJSON(json) {
+    return new IconButtonView(json);
+  }
+}
+
+/**
+ * Operator class for describing a PillBadgeView {@link View} for an
+ * operator type.
+ */
+export class PillBadgeView extends View {
+  constructor(options: ViewProps) {
+    super(options);
+    this.name = "PillBadgeView";
+  }
+  static fromJSON(json) {
+    return new PillBadgeView(json);
+  }
+}
+
+/**
+ * Operator class for describing a ModalView {@link Button} for an
+ * operator type.
+ */
+export class ModalView extends Button {
+  constructor(options: ViewProps) {
+    super(options);
+    this.name = "ModalView";
+  }
+  static fromJSON(json) {
+    return new ModalView(json);
+  }
+}
+
+/**
+ * Operator class for describing a ToastView {@link View} for an
+ * operator type.
+ */
+export class ToastView extends View {
+  constructor(options: ViewProps) {
+    super(options);
+    this.name = "ToastView";
+  }
+  static fromJSON(json) {
+    return new ToastView(json);
+  }
+}
+
+/**
+ * Operator class for rendering a execution button.
+ */
+
+class OperatorExecutionButtonView extends View {
+  constructor(options: ViewProps) {
+    super(options);
+    this.name = "OperatorExecutionButtonView";
+  }
+  static fromJSON(json) {
+    return new OperatorExecutionButtonView(json);
   }
 }
 
@@ -1175,6 +1303,7 @@ const VIEWS = {
   OneOfView,
   ListView,
   TupleView,
+  TreeSelectionView,
   CodeView,
   ColorView,
   JSONView,
@@ -1190,10 +1319,16 @@ const VIEWS = {
   MapView,
   ProgressView,
   MarkdownView,
+  StatusButtonView,
+  MediaPlayerView,
   PromptView,
   FieldView,
+  TextView,
   TextFieldView,
   LazyFieldView,
+  PillBadgeView,
+  ModalView,
+  ToastView,
 };
 
 export function typeFromJSON({ name, ...rest }): ANY_TYPE {

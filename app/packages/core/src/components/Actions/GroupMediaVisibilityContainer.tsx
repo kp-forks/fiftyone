@@ -37,8 +37,8 @@ const GroupMediaVisibilityPopout = ({
     fos.groupMediaIsMainVisibleSetting
   );
   const isNestedDynamicGroup = useRecoilValue(fos.isNestedDynamicGroup);
-  const shouldRenderImaVid = useRecoilValue(fos.shouldRenderImaVidLooker);
-  const dynamicGroupsViewMode = useRecoilValue(fos.dynamicGroupsViewMode);
+  const shouldRenderImaVid = useRecoilValue(fos.shouldRenderImaVidLooker(true));
+  const dynamicGroupsViewMode = useRecoilValue(fos.dynamicGroupsViewMode(true));
   const hasGroupSlices = useRecoilValue(fos.hasGroupSlices);
 
   const isSequentialAccessAllowed =
@@ -126,6 +126,7 @@ export const GroupMediaVisibilityContainer = ({
   return (
     <Container ref={ref} data-cy="action-toggle-group-media-visibility">
       <PillButton
+        tooltipPlacement={modal ? "top" : "bottom"}
         icon={
           <ViewComfyIcon classes={{ root: style.groupMediaVisibilityIcon }} />
         }

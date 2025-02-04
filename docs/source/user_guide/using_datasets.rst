@@ -59,6 +59,67 @@ have a bad time:
     dataset4 = fo.load_dataset("my_fourth_dataset")
     # DoesNotExistError: Dataset 'my_fourth_dataset' not found
 
+.. _dataset-media-type:
+
+Dataset media type
+------------------
+
+The media type of a dataset is determined by the
+:ref:`media type <using-media-type>` of the |Sample| objects that it contains.
+
+The :meth:`media_type <fiftyone.core.dataset.Dataset.media_type>` property of a
+dataset is set based on the first sample added to it:
+
+.. code-block:: python
+    :linenos:
+
+    import fiftyone as fo
+
+    dataset = fo.Dataset()
+
+    print(dataset.media_type)
+    # None
+
+    sample = fo.Sample(filepath="/path/to/image.png")
+    dataset.add_sample(sample)
+
+    print(dataset.media_type)
+    # "image"
+
+Note that datasets are homogeneous; they must contain samples of the same media
+type (except for :ref:`grouped datasets <groups>`):
+
+.. code-block:: python
+    :linenos:
+
+    sample = fo.Sample(filepath="/path/to/video.mp4")
+    dataset.add_sample(sample)
+    # MediaTypeError: Sample media type 'video' does not match dataset media type 'image'
+
+The following media types are available:
+
+.. table::
+    :widths: 25, 75
+
+    +---------------+---------------------------------------------------+
+    | Media type    | Description                                       |
+    +===============+===================================================+
+    | `image`       | Datasets that contain                             |
+    |               | :ref:`images <image-datasets>`                    |
+    +---------------+---------------------------------------------------+
+    | `video`       | Datasets that contain                             |
+    |               | :ref:`videos <video-datasets>`                    |
+    +---------------+---------------------------------------------------+
+    | `3d`          | Datasets that contain                             |
+    |               | :ref:`3D scenes <3d-datasets>`                    |
+    +---------------+---------------------------------------------------+
+    | `point-cloud` | Datasets that contain                             |
+    |               | :ref:`point clouds <point-cloud-datasets>`        |
+    +---------------+---------------------------------------------------+
+    | `group`       | Datasets that contain                             |
+    |               | :ref:`grouped data slices <groups>`               |
+    +---------------+---------------------------------------------------+
+
 .. _dataset-persistence:
 
 Dataset persistence
@@ -107,50 +168,6 @@ shell and run the command again:
 
 you'll see that the `my_second_dataset` and `2020.08.04.12.36.29` datasets have
 been deleted because they were not persistent.
-
-.. _dataset-media-type:
-
-Dataset media type
-------------------
-
-The media type of a dataset is determined by the
-:ref:`media type <using-media-type>` of the |Sample| objects that it contains.
-
-The :meth:`media_type <fiftyone.core.dataset.Dataset.media_type>` property of a
-dataset is set based on the first sample added to it:
-
-.. code-block:: python
-    :linenos:
-
-    import fiftyone as fo
-
-    dataset = fo.Dataset()
-
-    print(dataset.media_type)
-    # None
-
-    dataset.add_sample(fo.Sample(filepath="/path/to/image.png"))
-
-    print(dataset.media_type)
-    # "image"
-
-Datasets are homogeneous; they must contain samples of the same media type
-(except for :ref:`grouped datasets <groups>`):
-
-.. code-block:: python
-    :linenos:
-
-    dataset.add_sample(fo.Sample(filepath="/path/to/video.mp4"))
-    # MediaTypeError: Sample media type 'video' does not match dataset media type 'image'
-
-The following media types are possible:
-
--   `image`: if the dataset contains images
--   `video`: if the dataset contains :ref:`videos <video-datasets>`
--   `3d`: if the dataset contains :ref:`3D scenes <3d-datasets>`
--   `point-cloud`: if the dataset contains
-    :ref:`point clouds <point-cloud-datasets>`
--   `group`: if the dataset contains :ref:`grouped data slices <groups>`
 
 .. _dataset-version:
 
@@ -290,77 +307,6 @@ Datasets can also store more specific types of ancillary information such as
     the dataset's :meth:`info <fiftyone.core.dataset.Dataset.info>` property
     in-place to save the changes to the database.
 
-.. _storing-field-metadata:
-
-Storing field metadata
-----------------------
-
-You can store metadata such as descriptions and other info on the
-:ref:`fields <using-fields>` of your dataset.
-
-One approach is to manually declare the field with
-:meth:`add_sample_field() <fiftyone.core.dataset.Dataset.add_sample_field>`
-with the appropriate metadata provided:
-
-.. code-block:: python
-    :linenos:
-
-    import fiftyone as fo
-
-    dataset = fo.Dataset()
-    dataset.add_sample_field(
-        "int_field", fo.IntField, description="An integer field"
-    )
-
-    field = dataset.get_field("int_field")
-    print(field.description)  # An integer field
-
-You can also use
-:meth:`get_field() <fiftyone.core.collections.SampleCollection.get_field>` to
-retrieve a field and update it's metadata at any time:
-
-.. code-block:: python
-    :linenos:
-
-    import fiftyone as fo
-    import fiftyone.zoo as foz
-
-    dataset = foz.load_zoo_dataset("quickstart")
-    dataset.add_dynamic_sample_fields()
-
-    field = dataset.get_field("ground_truth")
-    field.description = "Ground truth annotations"
-    field.info = {"url": "https://fiftyone.ai"}
-    field.save()  # must save after edits
-
-    field = dataset.get_field("ground_truth.detections.area")
-    field.description = "Area of the box, in pixels^2"
-    field.info = {"url": "https://fiftyone.ai"}
-    field.save()  # must save after edits
-
-    dataset.reload()
-
-    field = dataset.get_field("ground_truth")
-    print(field.description)  # Ground truth annotations
-    print(field.info)  # {'url': 'https://fiftyone.ai'}
-
-    field = dataset.get_field("ground_truth.detections.area")
-    print(field.description)  # Area of the box, in pixels^2
-    print(field.info)  # {'url': 'https://fiftyone.ai'}
-
-.. note::
-
-    You must call
-    :meth:`field.save() <fiftyone.core.fields.Field.save>` after updating
-    the fields's :attr:`description <fiftyone.core.fields.Field.description>`
-    and :meth:`info <fiftyone.core.fields.Field.info>` attributes in-place to
-    save the changes to the database.
-
-.. note::
-
-    Did you know? You can view field metadata directly in the App by hovering
-    over fields or attributes :ref:`in the sidebar <app-fields-sidebar>`!
-
 .. _dataset-app-config:
 
 Dataset App config
@@ -413,6 +359,17 @@ default:
 
     session.refresh()
 
+You can set ``media_fallback=True`` if you want the App to fallback to the
+``filepath`` field if an alternate media field is missing for a particular
+sample in the grid and/or modal:
+
+.. code-block:: python
+    :linenos:
+
+    # Fallback to `filepath` if an alternate media field is missing
+    dataset.app_config.media_fallback = True
+    dataset.save()
+
 .. _dataset-app-config-color-scheme:
 
 Custom color scheme
@@ -431,6 +388,7 @@ that should be used by default whenever the dataset is loaded in the App:
     # Store a custom color scheme
     dataset.app_config.color_scheme = fo.ColorScheme(
         color_pool=["#ff0000", "#00ff00", "#0000ff", "pink", "yellowgreen"],
+        color_by="value",
         fields=[
             {
                 "path": "ground_truth",
@@ -456,8 +414,6 @@ that should be used by default whenever the dataset is loaded in the App:
     # to be loaded
     session.color_scheme = None
 
-In the above example, you can see TP/FP/FN colors in the App by clicking on the
-`Color palette` icon and switching `Color annotations by` to `value`.
 
 .. note::
 
@@ -468,23 +424,6 @@ In the above example, you can see TP/FP/FN colors in the App by clicking on the
 
     Did you know? You can also configure color schemes
     :ref:`directly in the App <app-color-schemes>`!
-
-.. _dataset-app-config-sidebar-mode:
-
-Sidebar mode
-~~~~~~~~~~~~
-
-You can configure the default loading behavior of the
-:ref:`filters sidebar <app-sidebar-mode>`:
-
-.. code-block:: python
-    :linenos:
-
-    # Set the default sidebar mode to "best"
-    dataset.app_config.sidebar_mode = "best"
-    dataset.save()  # must save after edits
-
-    session.refresh()
 
 .. _dataset-app-config-sidebar-groups:
 
@@ -509,6 +448,34 @@ You can configure the organization and default expansion state of the
     dataset.save()  # must save after edits
 
     session.refresh()
+
+.. _dataset-app-config-disable-frame-filtering:
+
+Disable frame filtering
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Filtering by frame-level fields of video datasets in the App's grid view can be
+expensive when the dataset is large.
+
+You can disable frame filtering for a video dataset as follows:
+
+.. code-block:: python
+    :linenos:
+
+    import fiftyone as fo
+    import fiftyone.zoo as foz
+
+    dataset = foz.load_zoo_dataset("quickstart-video")
+
+    dataset.app_config.disable_frame_filtering = True
+    dataset.save()  # must save after edits
+
+    session = fo.launch_app(dataset)
+
+.. note::
+
+    Did you know? You can also globally disable frame filtering for all video
+    datasets via your :ref:`App config <configuring-fiftyone-app>`.
 
 .. _dataset-app-config-reset:
 
@@ -1013,25 +980,40 @@ By default, all |Sample| instances have the following fields:
 .. table::
     :widths: 18 18 18 46
 
-    +--------------+------------------------------------+---------------+---------------------------------------------------+
-    | Field        | Type                               | Default       | Description                                       |
-    +==============+====================================+===============+===================================================+
-    | `id`         | string                             | `None`        | The ID of the sample in its parent dataset, which |
-    |              |                                    |               | is generated automatically when the sample is     |
-    |              |                                    |               | added to a dataset, or `None` if the sample does  |
-    |              |                                    |               | not belong to a dataset                           |
-    +--------------+------------------------------------+---------------+---------------------------------------------------+
-    | `filepath`   | string                             | **REQUIRED**  | The path to the source data on disk. Must be      |
-    |              |                                    |               | provided at sample creation time                  |
-    +--------------+------------------------------------+---------------+---------------------------------------------------+
-    | `media_type` | string                             | N/A           | The media type of the sample. Computed            |
-    |              |                                    |               | automatically from the provided `filepath`        |
-    +--------------+------------------------------------+---------------+---------------------------------------------------+
-    | `tags`       | list                               | `[]`          | A list of string tags for the sample              |
-    +--------------+------------------------------------+---------------+---------------------------------------------------+
-    | `metadata`   | :class:`Metadata                   | `None`        | Type-specific metadata about the source data      |
-    |              | <fiftyone.core.metadata.Metadata>` |               |                                                   |
-    +--------------+------------------------------------+---------------+---------------------------------------------------+
+    +--------------------+------------------------------------+---------------+---------------------------------------------------+
+    | Field              | Type                               | Default       | Description                                       |
+    +====================+====================================+===============+===================================================+
+    | `id`               | string                             | `None`        | The ID of the sample in its parent dataset, which |
+    |                    |                                    |               | is generated automatically when the sample is     |
+    |                    |                                    |               | added to a dataset, or `None` if the sample does  |
+    |                    |                                    |               | not belong to a dataset                           |
+    +--------------------+------------------------------------+---------------+---------------------------------------------------+
+    | `filepath`         | string                             | **REQUIRED**  | The path to the source data on disk. Must be      |
+    |                    |                                    |               | provided at sample creation time                  |
+    +--------------------+------------------------------------+---------------+---------------------------------------------------+
+    | `media_type`       | string                             | N/A           | The media type of the sample. Computed            |
+    |                    |                                    |               | automatically from the provided `filepath`        |
+    +--------------------+------------------------------------+---------------+---------------------------------------------------+
+    | `tags`             | list                               | `[]`          | A list of string tags for the sample              |
+    +--------------------+------------------------------------+---------------+---------------------------------------------------+
+    | `metadata`         | :class:`Metadata                   | `None`        | Type-specific metadata about the source data      |
+    |                    | <fiftyone.core.metadata.Metadata>` |               |                                                   |
+    +--------------------+------------------------------------+---------------+---------------------------------------------------+
+    | `created_at`       | datetime                           | `None`        | The datetime that the sample was added to its     |
+    |                    |                                    |               | parent dataset, which is generated automatically, |
+    |                    |                                    |               | or `None` if the sample does not belong to a      |
+    |                    |                                    |               | dataset                                           |
+    +--------------------+------------------------------------+---------------+---------------------------------------------------+
+    | `last_modified_at` | datetime                           | `None`        | The datetime that the sample was last modified,   |
+    |                    |                                    |               | which is updated automatically, or `None` if the  |
+    |                    |                                    |               | sample does not belong to a dataset               |
+    +--------------------+------------------------------------+---------------+---------------------------------------------------+
+
+.. note::
+
+    The `created_at` and `last_modified_at` fields are
+    :ref:`read-only <read-only-fields>` and are automatically populated/updated
+    when you add samples to datasets and modify them, respectively.
 
 .. code-block:: python
     :linenos:
@@ -1050,6 +1032,8 @@ By default, all |Sample| instances have the following fields:
         'filepath': '/path/to/image.png',
         'tags': [],
         'metadata': None,
+        'created_at': None,
+        'last_modified_at': None,
     }>
 
 .. _accessing-sample-fields:
@@ -1063,7 +1047,7 @@ The names of available fields can be checked on any individual |Sample|:
     :linenos:
 
     sample.field_names
-    # ('filepath', 'media_type', 'tags', 'metadata')
+    # ('id', 'filepath', 'tags', 'metadata', 'created_at', 'last_modified_at')
 
 The value of a |Field| for a given |Sample| can be accessed either by either
 attribute or item access:
@@ -1097,7 +1081,9 @@ retrieve detailed information about the schema of the samples in a dataset:
         ('id', <fiftyone.core.fields.ObjectIdField at 0x7fbaa862b358>),
         ('filepath', <fiftyone.core.fields.StringField at 0x11c77ae10>),
         ('tags', <fiftyone.core.fields.ListField at 0x11c790828>),
-        ('metadata', <fiftyone.core.fields.EmbeddedDocumentField at 0x11c7907b8>)
+        ('metadata', <fiftyone.core.fields.EmbeddedDocumentField at 0x11c7907b8>),
+        ('created_at', <fiftyone.core.fields.DateTimeField at 0x7fea48361af0>),
+        ('last_modified_at', <fiftyone.core.fields.DateTimeField at 0x7fea48361b20>)]),
     ])
 
 You can also view helpful information about a dataset, including its schema, by
@@ -1116,10 +1102,12 @@ printing it:
     Persistent:     False
     Tags:           []
     Sample fields:
-        id:         fiftyone.core.fields.ObjectIdField
-        filepath:   fiftyone.core.fields.StringField
-        tags:       fiftyone.core.fields.ListField(fiftyone.core.fields.StringField)
-        metadata:   fiftyone.core.fields.EmbeddedDocumentField(fiftyone.core.metadata.ImageMetadata)
+        id:               fiftyone.core.fields.ObjectIdField
+        filepath:         fiftyone.core.fields.StringField
+        tags:             fiftyone.core.fields.ListField(fiftyone.core.fields.StringField)
+        metadata:         fiftyone.core.fields.EmbeddedDocumentField(fiftyone.core.metadata.ImageMetadata)
+        created_at:       fiftyone.core.fields.DateTimeField
+        last_modified_at: fiftyone.core.fields.DateTimeField
 
 .. note::
 
@@ -1139,8 +1127,8 @@ New fields can be added to a |Sample| using item assignment:
     sample["integer_field"] = 51
     sample.save()
 
-If the |Sample| belongs to a |Dataset|, the dataset's field schema will be
-updated to reflect the new field:
+If the |Sample| belongs to a |Dataset|, the dataset's schema will automatically
+be updated to reflect the new field:
 
 .. code-block:: python
     :linenos:
@@ -1155,11 +1143,13 @@ updated to reflect the new field:
     Persistent:     False
     Tags:           []
     Sample fields:
-        id:            fiftyone.core.fields.ObjectIdField
-        filepath:      fiftyone.core.fields.StringField
-        tags:          fiftyone.core.fields.ListField(fiftyone.core.fields.StringField)
-        metadata:      fiftyone.core.fields.EmbeddedDocumentField(fiftyone.core.metadata.ImageMetadata)
-        integer_field: fiftyone.core.fields.IntField
+        id:               fiftyone.core.fields.ObjectIdField
+        filepath:         fiftyone.core.fields.StringField
+        tags:             fiftyone.core.fields.ListField(fiftyone.core.fields.StringField)
+        metadata:         fiftyone.core.fields.EmbeddedDocumentField(fiftyone.core.metadata.ImageMetadata)
+        created_at:       fiftyone.core.fields.DateTimeField
+        last_modified_at: fiftyone.core.fields.DateTimeField
+        integer_field:    fiftyone.core.fields.IntField
 
 A |Field| can be any primitive type, such as `bool`, `int`, `float`, `str`,
 `date`, `datetime`, `list`, `dict`, or more complex data structures
@@ -1168,7 +1158,7 @@ A |Field| can be any primitive type, such as `bool`, `int`, `float`, `str`,
 .. code-block:: python
     :linenos:
 
-    sample["ground_truth"] = fo.Classification(label="alligator")
+    sample["animal"] = fo.Classification(label="alligator")
     sample.save()
 
 Whenever a new field is added to a sample in a dataset, the field is available
@@ -1240,6 +1230,8 @@ any values on its samples:
         'filepath': <fiftyone.core.fields.StringField object at 0x7f92d273e0d0>,
         'tags': <fiftyone.core.fields.ListField object at 0x7f92d2654f70>,
         'metadata': <fiftyone.core.fields.EmbeddedDocumentField object at 0x7f9280803d90>,
+        'created_at': <fiftyone.core.fields.DateTimeField object at 0x7fea48361af0>,
+        'last_modified_at': <fiftyone.core.fields.DateTimeField object at 0x7fea48361b20>,
         'ground_truth': <fiftyone.core.fields.EmbeddedDocumentField object at 0x7f92d2605190>,
         'scene_id': <fiftyone.core.fields.StringField object at 0x7f9280803490>,
         'quality': <fiftyone.core.fields.FloatField object at 0x7f92d2605bb0>,
@@ -1265,6 +1257,8 @@ on all samples in the dataset with the value `None`:
         'filepath': '/Users/Brian/dev/fiftyone/image.jpg',
         'tags': [],
         'metadata': None,
+        'created_at': datetime.datetime(2024, 7, 22, 5, 0, 25, 372399),
+        'last_modified_at': datetime.datetime(2024, 7, 22, 5, 0, 25, 372399),
         'ground_truth': <Classification: {
             'id': '642d8848f291652133df8d38',
             'tags': [],
@@ -1450,6 +1444,383 @@ removed from every |Sample| in the dataset:
     sample.integer_field
     # AttributeError: Sample has no field 'integer_field'
 
+.. _storing-field-metadata:
+
+Storing field metadata
+----------------------
+
+You can store metadata such as descriptions and other info on the fields of
+your dataset.
+
+One approach is to manually declare the field with
+:meth:`add_sample_field() <fiftyone.core.dataset.Dataset.add_sample_field>`
+with the appropriate metadata provided:
+
+.. code-block:: python
+    :linenos:
+
+    import fiftyone as fo
+
+    dataset = fo.Dataset()
+    dataset.add_sample_field(
+        "int_field", fo.IntField, description="An integer field"
+    )
+
+    field = dataset.get_field("int_field")
+    print(field.description)  # An integer field
+
+You can also use
+:meth:`get_field() <fiftyone.core.collections.SampleCollection.get_field>` to
+retrieve a field and update it's metadata at any time:
+
+.. code-block:: python
+    :linenos:
+
+    import fiftyone as fo
+    import fiftyone.zoo as foz
+
+    dataset = foz.load_zoo_dataset("quickstart")
+    dataset.add_dynamic_sample_fields()
+
+    field = dataset.get_field("ground_truth")
+    field.description = "Ground truth annotations"
+    field.info = {"url": "https://fiftyone.ai"}
+    field.save()  # must save after edits
+
+    field = dataset.get_field("ground_truth.detections.area")
+    field.description = "Area of the box, in pixels^2"
+    field.info = {"url": "https://fiftyone.ai"}
+    field.save()  # must save after edits
+
+    dataset.reload()
+
+    field = dataset.get_field("ground_truth")
+    print(field.description)  # Ground truth annotations
+    print(field.info)  # {'url': 'https://fiftyone.ai'}
+
+    field = dataset.get_field("ground_truth.detections.area")
+    print(field.description)  # Area of the box, in pixels^2
+    print(field.info)  # {'url': 'https://fiftyone.ai'}
+
+.. note::
+
+    You must call
+    :meth:`field.save() <fiftyone.core.fields.Field.save>` after updating
+    a fields's :attr:`description <fiftyone.core.fields.Field.description>`
+    and :meth:`info <fiftyone.core.fields.Field.info>` attributes in-place to
+    save the changes to the database.
+
+.. note::
+
+    Did you know? You can view field metadata directly in the App by hovering
+    over fields or attributes :ref:`in the sidebar <app-fields-sidebar>`!
+
+.. _read-only-fields:
+
+Read-only fields
+----------------
+
+Certain :ref:`default sample fields <default-sample-fields>` like `created_at`
+and `last_modified_at` are read-only and thus cannot be manually edited:
+
+.. code-block:: python
+    :linenos:
+
+    from datetime import datetime
+    import fiftyone as fo
+
+    sample = fo.Sample(filepath="/path/to/image.jpg")
+
+    dataset = fo.Dataset()
+    dataset.add_sample(sample)
+
+    sample.created_at = datetime.utcnow()
+    # ValueError: Cannot edit read-only field 'created_at'
+
+    sample.last_modified_at = datetime.utcnow()
+    # ValueError: Cannot edit read-only field 'last_modified_at'
+
+You can also manually mark additional fields or embedded fields as read-only
+at any time:
+
+.. code-block:: python
+    :linenos:
+
+    import fiftyone as fo
+    import fiftyone.zoo as foz
+
+    dataset = foz.load_zoo_dataset("quickstart")
+
+    # Declare a new read-only field
+    dataset.add_sample_field("uuid", fo.StringField, read_only=True)
+
+    # Mark 'filepath' as read-only
+    field = dataset.get_field("filepath")
+    field.read_only = True
+    field.save()  # must save after edits
+
+    # Mark a nested field as read-only
+    field = dataset.get_field("ground_truth.detections.label")
+    field.read_only = True
+    field.save()  # must save after edits
+
+    sample = dataset.first()
+
+    sample.filepath = "no.jpg"
+    # ValueError: Cannot edit read-only field 'filepath'
+
+    sample.ground_truth.detections[0].label = "no"
+    sample.save()
+    # ValueError: Cannot edit read-only field 'ground_truth.detections.label'
+
+.. note::
+
+    You must call
+    :meth:`field.save() <fiftyone.core.fields.Field.save>` after updating
+    a fields's :attr:`read_only <fiftyone.core.fields.Field.read_only>`
+    attributes in-place to save the changes to the database.
+
+Note that read-only fields do not interfere with the ability to add/delete
+samples from datasets:
+
+.. code-block:: python
+    :linenos:
+
+    sample = fo.Sample(filepath="/path/to/image.jpg", uuid="1234")
+    dataset.add_sample(sample)
+
+    dataset.delete_samples(sample)
+
+Any fields that you've manually marked as read-only may be reverted to
+editable at any time:
+
+.. code-block:: python
+    :linenos:
+
+    sample = dataset.first()
+
+    # Revert 'filepath' to editable
+    field = dataset.get_field("filepath")
+    field.read_only = False
+    field.save()  # must save after edits
+
+    # Revert nested field to editable
+    field = dataset.get_field("ground_truth.detections.label")
+    field.read_only = False
+    field.save()  # must save after edits
+
+    sample.filepath = "yes.jpg"
+    sample.ground_truth.detections[0].label = "yes"
+    sample.save()
+
+.. _summary-fields:
+
+Summary fields
+--------------
+
+Summary fields allow you to efficiently perform queries on large datasets where
+directly querying the underlying field is prohibitively slow due to the number
+of objects/frames in the field.
+
+For example, suppose you're working on a
+:ref:`video dataset <video-datasets>` with frame-level objects, and you're
+interested in finding videos that contain specific classes of interest, eg
+`person`, in at least one frame:
+
+.. code-block:: python
+    :linenos:
+
+    import fiftyone as fo
+    import fiftyone.zoo as foz
+    from fiftyone import ViewField as F
+
+    dataset = foz.load_zoo_dataset("quickstart-video")
+    dataset.set_field("frames.detections.detections.confidence", F.rand()).save()
+
+    session = fo.launch_app(dataset)
+
+.. image:: /images/datasets/quickstart-video.gif
+   :alt: quickstart-video
+   :align: center
+
+One approach is to directly query the frame-level field (`frames.detections`
+in this case) in the App's sidebar. However, when the dataset is large, such
+queries are inefficient, as they cannot unlock
+:ref:`query performance <app-optimizing-query-performance>` and thus require
+full collection scans over all frames to retrieve the relevant samples.
+
+A more efficient approach is to first use
+:meth:`create_summary_field() <fiftyone.core.dataset.Dataset.create_summary_field>`
+to summarize the relevant input field path(s):
+
+.. code-block:: python
+    :linenos:
+
+    # Generate a summary field for object labels
+    field_name = dataset.create_summary_field("frames.detections.detections.label")
+
+    # The name of the summary field that was created
+    print(field_name)
+    # 'frames_detections_label'
+
+    # Generate a summary field for [min, max] confidences
+    dataset.create_summary_field("frames.detections.detections.confidence")
+
+Summary fields can be generated for sample-level and frame-level fields, and
+the input fields can be either categorical or numeric:
+
+.. tabs::
+
+    .. group-tab:: Categorical fields
+
+        When the input field is categorical (string or boolean), the summary
+        field of each sample is populated with the list of unique values
+        observed in the field (across all frames for video samples):
+
+        .. code-block:: python
+            :linenos:
+
+            sample = dataset.first()
+            print(sample.frames_detections_label)
+            # ['vehicle', 'road sign', 'person']
+
+        You can also pass `include_counts=True` to include counts for each
+        unique value in the summary field:
+
+        .. code-block:: python
+            :linenos:
+
+            # Generate a summary field for object labels and counts
+            dataset.create_summary_field(
+                "frames.detections.detections.label",
+                field_name="frames_detections_label2",
+                include_counts=True,
+            )
+
+            sample = dataset.first()
+            print(sample.frames_detections_label2)
+            """
+            [
+                <DynamicEmbeddedDocument: {'label': 'road sign', 'count': 198}>,
+                <DynamicEmbeddedDocument: {'label': 'vehicle', 'count': 175}>,
+                <DynamicEmbeddedDocument: {'label': 'person', 'count': 120}>,
+            ]
+            """
+
+    .. group-tab:: Numeric fields
+
+        When the input field is numeric (int, float, date, or datetime), the
+        summary field of each sample is populated with the `[min, max]` range
+        of the values observed in the field (across all frames for video
+        samples):
+
+        .. code-block:: python
+            :linenos:
+
+            sample = dataset.first()
+            print(sample.frames_detections_confidence)
+            # <DynamicEmbeddedDocument: {'min': 0.01, 'max': 0.99}>
+
+        You can also pass the `group_by` parameter to specify an attribute to
+        group by to generate per-attribute `[min, max]` ranges:
+
+        .. code-block:: python
+            :linenos:
+
+            # Generate a summary field for per-label [min, max] confidences
+            dataset.create_summary_field(
+                "frames.detections.detections.confidence",
+                field_name="frames_detections_confidence2",
+                group_by="label",
+            )
+
+            sample = dataset.first()
+            print(sample.frames_detections_confidence2)
+            """
+            [
+                <DynamicEmbeddedDocument: {'label': 'vehicle', 'min': 0.00, 'max': 0.98}>,
+                <DynamicEmbeddedDocument: {'label': 'person', 'min': 0.02, 'max': 0.97}>,
+                <DynamicEmbeddedDocument: {'label': 'road sign', 'min': 0.01, 'max': 0.99}>,
+            ]
+            """
+
+As the above examples illustrate, summary fields allow you to encode various
+types of information at the sample-level that you can directly query to find
+samples that contain specific values.
+
+Moreover, summary fields are :ref:`indexed <app-optimizing-query-performance>`
+by default and the App can natively leverage these indexes to provide
+performant filtering:
+
+.. image:: /images/datasets/quickstart-video-summary-fields.gif
+   :alt: quickstart-video-summary-fields
+   :align: center
+
+.. note::
+
+    Summary fields are automatically added to a `summaries`
+    :ref:`sidebar group <dataset-app-config-sidebar-groups>` in the App for
+    easy access and organization.
+
+    They are also :ref:`read-only <read-only-fields>` by default, as they are
+    implicitly derived from the contents of their source field and are not
+    intended to be directly modified.
+
+You can use
+:meth:`list_summary_fields() <fiftyone.core.dataset.Dataset.list_summary_fields>`
+to list the names of the summary fields on your dataset:
+
+.. code-block:: python
+    :linenos:
+
+    print(dataset.list_summary_fields())
+    # ['frames_detections_label', 'frames_detections_confidence', ...]
+
+Since a summary field is derived from the contents of another field, it must be
+updated whenever there have been modifications to its source field. You can use
+:meth:`check_summary_fields() <fiftyone.core.dataset.Dataset.check_summary_fields>`
+to check for summary fields that *may* need to be updated:
+
+.. code-block:: python
+    :linenos:
+
+    # Newly created summary fields don't needed updating
+    print(dataset.check_summary_fields())
+    # []
+
+    # Modify the dataset
+    label_upper = F("label").upper()
+    dataset.set_field("frames.detections.detections.label", label_upper).save()
+
+    # Summary fields now (may) need updating
+    print(dataset.check_summary_fields())
+    # ['frames_detections_label', 'frames_detections_confidence', ...]
+
+.. note::
+
+    Note that inclusion in
+    :meth:`check_summary_fields() <fiftyone.core.dataset.Dataset.check_summary_fields>`
+    is only a heuristic, as any sample modifications *may not* have affected
+    the summary's source field.
+
+Use :meth:`update_summary_field() <fiftyone.core.dataset.Dataset.update_summary_field>`
+to regenerate a summary field based on the current values of its source field:
+
+.. code-block:: python
+    :linenos:
+
+    dataset.update_summary_field("frames_detections_label")
+
+Finally, use
+:meth:`delete_summary_field() <fiftyone.core.dataset.Dataset.delete_summary_field>`
+or :meth:`delete_summary_fields() <fiftyone.core.dataset.Dataset.delete_summary_fields>`
+to delete existing summary field(s) that you no longer need:
+
+.. code-block:: python
+    :linenos:
+
+    dataset.delete_summary_field("frames_detections_label")
+
 .. _using-media-type:
 
 Media type
@@ -1625,6 +1996,8 @@ some workflows when it is available.
                     'height': 664,
                     'num_channels': 3,
                 }>,
+                'created_at': None,
+                'last_modified_at': None,
             }>
 
     .. group-tab:: Videos
@@ -1688,6 +2061,8 @@ some workflows when it is available.
                     'duration': 2.268933,
                     'encoding_str': 'avc1',
                 }>,
+                'created_at': None,
+                'last_modified_at': None,
                 'frames': <Frames: 0>,
             }>
 
@@ -1710,13 +2085,13 @@ You can store date information in FiftyOne datasets by populating fields with
         [
             fo.Sample(
                 filepath="image1.png",
-                created_at=datetime(2021, 8, 24, 21, 18, 7),
-                created_date=date(2021, 8, 24),
+                acquisition_time=datetime(2021, 8, 24, 21, 18, 7),
+                acquisition_date=date(2021, 8, 24),
             ),
             fo.Sample(
                 filepath="image2.png",
-                created_at=datetime.utcnow(),
-                created_date=date.today(),
+                acquisition_time=datetime.utcnow(),
+                acquisition_date=date.today(),
             ),
         ]
     )
@@ -1740,7 +2115,7 @@ format for safekeeping.
     # A datetime in your local timezone
     now = datetime.utcnow().astimezone()
 
-    sample = fo.Sample(filepath="image.png", created_at=now)
+    sample = fo.Sample(filepath="image.png", acquisition_time=now)
 
     dataset = fo.Dataset()
     dataset.add_sample(sample)
@@ -1749,7 +2124,7 @@ format for safekeeping.
     # loaded from the database
     dataset.reload()
 
-    sample.created_at.tzinfo  # None
+    sample.acquisition_time.tzinfo  # None
 
 By default, when you access a datetime field of a sample in a dataset, it is
 retrieved as a naive `datetime` instance expressed in UTC format.
@@ -1840,6 +2215,8 @@ visualized in the App or used, for example, when
         'filepath': '/path/to/image.png',
         'tags': [],
         'metadata': None,
+        'created_at': None,
+        'last_modified_at': None,
         'ground_truth': <Regression: {
             'id': '616c4bef36297ec40a26d112',
             'tags': [],
@@ -1894,6 +2271,8 @@ be visualized in the App or used by Brain methods, e.g., when
         'filepath': '/path/to/image.png',
         'tags': [],
         'metadata': None,
+        'created_at': None,
+        'last_modified_at': None,
         'ground_truth': <Classification: {
             'id': '5f8708db2018186b6ef66821',
             'label': 'sunny',
@@ -1963,6 +2342,8 @@ overarching model (if applicable) in the
         'filepath': '/path/to/image.png',
         'tags': [],
         'metadata': None,
+        'created_at': None,
+        'last_modified_at': None,
         'ground_truth': <Classifications: {
             'classifications': [
                 <Classification: {
@@ -2080,6 +2461,8 @@ detection can be stored in the
         'filepath': '/path/to/image.png',
         'tags': [],
         'metadata': None,
+        'created_at': None,
+        'last_modified_at': None,
         'ground_truth': <Detections: {
             'detections': [
                 <Detection: {
@@ -2156,25 +2539,41 @@ Instance segmentations
 ----------------------
 
 Object detections stored in |Detections| may also have instance segmentation
-masks, which should be stored in the
-:attr:`mask <fiftyone.core.labels.Detection.mask>` attribute of each
-|Detection|.
+masks.
 
-The mask must be a 2D numpy array containing either booleans or 0/1 integers
-encoding the extent of the instance mask within the
+These masks can be stored in one of two ways: either directly in the database
+via the :attr:`mask <fiftyone.core.labels.Detection.mask>` attribute, or on
+disk referenced by the
+:attr:`mask_path <fiftyone.core.labels.Detection.mask_path>` attribute.
+
+Masks stored directly in the database must be 2D numpy arrays
+containing either booleans or 0/1 integers that encode the extent of the
+instance mask within the
 :attr:`bounding_box <fiftyone.core.labels.Detection.bounding_box>` of the
-object. The array can be of any size; it is stretched as necessary to fill the
+object.
+
+For masks stored on disk, the
+:attr:`mask_path <fiftyone.core.labels.Detection.mask_path>` attribute should
+contain the file path to the mask image. We recommend storing masks as
+single-channel PNG images, where a pixel value of 0 indicates the
+background (rendered as transparent in the App), and any other 
+value indicates the object.
+
+Masks can be of any size; they are stretched as necessary to fill the
 object's bounding box when visualizing in the App.
 
 .. code-block:: python
     :linenos:
 
     import numpy as np
+    from PIL import Image
 
     import fiftyone as fo
 
     # Example instance mask
-    mask = (np.random.randn(32, 32) > 0)
+    mask = ((np.random.randn(32, 32) > 0) * 255).astype(np.uint8)
+    mask_path = "/path/to/mask.png"
+    Image.fromarray(mask).save(mask_path)
 
     sample = fo.Sample(filepath="/path/to/image.png")
 
@@ -2183,7 +2582,7 @@ object's bounding box when visualizing in the App.
             fo.Detection(
                 label="cat",
                 bounding_box=[0.480, 0.513, 0.397, 0.288],
-                mask=mask,
+                mask_path=mask_path,
                 confidence=0.96,
             ),
         ]
@@ -2199,20 +2598,18 @@ object's bounding box when visualizing in the App.
         'filepath': '/path/to/image.png',
         'tags': [],
         'metadata': None,
+        'created_at': None,
+        'last_modified_at': None,
         'prediction': <Detections: {
             'detections': [
                 <Detection: {
                     'id': '5f8709282018186b6ef6682b',
                     'attributes': {},
+                    'tags': [],
                     'label': 'cat',
                     'bounding_box': [0.48, 0.513, 0.397, 0.288],
-                    'mask': array([[False,  True, False, ...,  True,  True, False],
-                           [ True, False,  True, ..., False,  True,  True],
-                           [False,  True, False, ..., False,  True, False],
-                           ...,
-                           [ True,  True, False, ..., False, False,  True],
-                           [ True,  True,  True, ...,  True,  True, False],
-                           [False,  True,  True, ..., False,  True,  True]]),
+                    'mask': None,
+                    'mask_path': '/path/to/mask.png',
                     'confidence': 0.96,
                     'index': None,
                 }>,
@@ -2220,8 +2617,8 @@ object's bounding box when visualizing in the App.
         }>,
     }>
 
-Like all |Label| types, you can also add custom attributes to your detections
-by dynamically adding new fields to each |Detection| instance:
+Like all |Label| types, you can also add custom attributes to your instance
+segmentations by dynamically adding new fields to each |Detection| instance:
 
 .. code-block:: python
     :linenos:
@@ -2232,7 +2629,7 @@ by dynamically adding new fields to each |Detection| instance:
     detection = fo.Detection(
         label="cat",
         bounding_box=[0.5, 0.5, 0.4, 0.3],
-        mask=np.random.randn(32, 32) > 0,
+        mask_path="/path/to/mask.png",
         age=51,  # custom attribute
         mood="salty",  # custom attribute
     )
@@ -2247,13 +2644,7 @@ by dynamically adding new fields to each |Detection| instance:
         'tags': [],
         'label': 'cat',
         'bounding_box': [0.5, 0.5, 0.4, 0.3],
-        'mask': array([[False, False,  True, ...,  True,  True, False],
-               [ True,  True, False, ...,  True, False,  True],
-               [False, False,  True, ..., False, False, False],
-               ...,
-               [False, False,  True, ...,  True,  True, False],
-               [ True, False,  True, ...,  True, False,  True],
-               [False,  True, False, ...,  True,  True,  True]]),
+        'mask_path': '/path/to/mask.png',
         'confidence': None,
         'index': None,
         'age': 51,
@@ -2333,6 +2724,8 @@ Polylines can also have string labels, which are stored in their
         'filepath': '/path/to/image.png',
         'tags': [],
         'metadata': None,
+        'created_at': None,
+        'last_modified_at': None,
         'polylines': <Polylines: {
             'polylines': [
                 <Polyline: {
@@ -2603,6 +2996,8 @@ optionally have a list of per-point confidences in `[0, 1]` in its
         'filepath': '/path/to/image.png',
         'tags': [],
         'metadata': None,
+        'created_at': None,
+        'last_modified_at': None,
         'keypoints': <Keypoints: {
             'keypoints': [
                 <Keypoint: {
@@ -2697,6 +3092,10 @@ stored directly in the database via the
     :attr:`mask_path <fiftyone.core.labels.Segmentation.mask_path>` attribute,
     for efficiency.
 
+    Note that :attr:`mask_path <fiftyone.core.labels.Segmentation.mask_path>`
+    must contain the **absolute path** to the mask on disk in order to use the
+    dataset from different current working directories in the future.
+
 Segmentation masks can be stored in either of these formats:
 
 -   2D 8-bit or 16-bit images or numpy arrays
@@ -2732,6 +3131,8 @@ the image's extent when visualizing in the App.
         'filepath': '/path/to/image.png',
         'tags': [],
         'metadata': None,
+        'created_at': None,
+        'last_modified_at': None,
         'segmentation1': <Segmentation: {
             'id': '6371d72425de9907b93b2a6b',
             'tags': [],
@@ -2801,6 +3202,10 @@ image's extent when visualizing in the App.
     :attr:`map_path <fiftyone.core.labels.Heatmap.map_path>` attribute, for
     efficiency.
 
+    Note that :attr:`map_path <fiftyone.core.labels.Heatmap.map_path>`
+    must contain the **absolute path** to the map on disk in order to use the
+    dataset from different current working directories in the future.
+
 .. code-block:: python
     :linenos:
 
@@ -2828,6 +3233,8 @@ image's extent when visualizing in the App.
         'filepath': '/path/to/image.png',
         'tags': [],
         'metadata': None,
+        'created_at': None,
+        'last_modified_at': None,
         'heatmap1': <Heatmap: {
             'id': '6371d9e425de9907b93b2a6f',
             'tags': [],
@@ -2986,6 +3393,8 @@ App.
         'filepath': '/path/to/video.mp4',
         'tags': [],
         'metadata': None,
+        'created_at': None,
+        'last_modified_at': None,
         'events': <TemporalDetection: {
             'id': '61321c8ea36cb17df655f44f',
             'tags': [],
@@ -3038,6 +3447,8 @@ based on the sample's :ref:`video metadata <using-metadata>`:
             'duration': 4.004,
             'encoding_str': 'avc1',
         }>,
+        'created_at': None,
+        'last_modified_at': None,
         'events': <TemporalDetection: {
             'id': '61321e498d5f587970b29183',
             'tags': [],
@@ -3074,6 +3485,8 @@ sample:
         'filepath': '/path/to/video.mp4',
         'tags': [],
         'metadata': None,
+        'created_at': None,
+        'last_modified_at': None,
         'events': <TemporalDetections: {
             'detections': [
                 <TemporalDetection: {
@@ -3233,6 +3646,8 @@ properties to do so.
         'filepath': '/path/to/image.png',
         'tags': [],
         'metadata': None,
+        'created_at': None,
+        'last_modified_at': None,
         'location': <GeoLocation: {
             'id': '60481f3936dc48428091e926',
             'tags': [],
@@ -3440,6 +3855,8 @@ schema of the attributes that you're storing.
         'filepath': '/path/to/image.png',
         'tags': [],
         'metadata': None,
+        'created_at': None,
+        'last_modified_at': None,
         'ground_truth': <Detections: {
             'detections': [
                 <Detection: {
@@ -3594,14 +4011,16 @@ formats:
     Persistent:  False
     Tags:        []
     Sample fields:
-        id:            fiftyone.core.fields.ObjectIdField
-        filepath:      fiftyone.core.fields.StringField
-        tags:          fiftyone.core.fields.ListField(fiftyone.core.fields.StringField)
-        metadata:      fiftyone.core.fields.EmbeddedDocumentField(fiftyone.core.metadata.ImageMetadata)
-        instances:     fiftyone.core.fields.EmbeddedDocumentField(fiftyone.core.labels.Detections)
-        segmentations: fiftyone.core.fields.EmbeddedDocumentField(fiftyone.core.labels.Segmentation)
-        polylines:     fiftyone.core.fields.EmbeddedDocumentField(fiftyone.core.labels.Polylines)
-        instances2:    fiftyone.core.fields.EmbeddedDocumentField(fiftyone.core.labels.Detections)
+        id:               fiftyone.core.fields.ObjectIdField
+        filepath:         fiftyone.core.fields.StringField
+        tags:             fiftyone.core.fields.ListField(fiftyone.core.fields.StringField)
+        metadata:         fiftyone.core.fields.EmbeddedDocumentField(fiftyone.core.metadata.ImageMetadata)
+        created_at:       fiftyone.core.fields.DateTimeField
+        last_modified_at: fiftyone.core.fields.DateTimeField
+        instances:        fiftyone.core.fields.EmbeddedDocumentField(fiftyone.core.labels.Detections)
+        segmentations:    fiftyone.core.fields.EmbeddedDocumentField(fiftyone.core.labels.Segmentation)
+        polylines:        fiftyone.core.fields.EmbeddedDocumentField(fiftyone.core.labels.Polylines)
+        instances2:       fiftyone.core.fields.EmbeddedDocumentField(fiftyone.core.labels.Detections)
 
 Note that, if your goal is to export the labels to disk, FiftyOne can
 :ref:`automatically coerce <export-label-coercion>` the labels into the correct
@@ -3724,6 +4143,8 @@ document attributes as top-level keys:
         'metadata.width': <fiftyone.core.fields.IntField>,
         'metadata.height': <fiftyone.core.fields.IntField>,
         'metadata.num_channels': <fiftyone.core.fields.IntField>,
+        'created_at': <fiftyone.core.fields.DateTimeField object at 0x7fea584bc730>,
+        'last_modified_at': <fiftyone.core.fields.DateTimeField object at 0x7fea584bc280>,
         'ground_truth': <fiftyone.core.fields.EmbeddedDocumentField>,
         'ground_truth.detections': <fiftyone.core.fields.ListField>,
         'ground_truth.detections.id': <fiftyone.core.fields.ObjectIdField>,
@@ -4073,6 +4494,8 @@ future sessions and manipulated as usual:
         'filepath': '/path/to/image.png',
         'tags': [],
         'metadata': None,
+        'created_at': datetime.datetime(2024, 7, 22, 5, 16, 10, 701907),
+        'last_modified_at': datetime.datetime(2024, 7, 22, 5, 16, 10, 701907),
         'camera_info': <CameraInfo: {
             'camera_id': '123456789',
             'quality': 99.0,
@@ -4091,6 +4514,65 @@ future sessions and manipulated as usual:
             }>,
         }>,
     }>
+
+.. _image-datasets:
+
+Image datasets
+______________
+
+Any |Sample| whose `filepath` is a file with MIME type  `image/*` is recognized
+as a image sample, and datasets composed of image samples have media type
+`image`:
+
+.. code-block:: python
+    :linenos:
+
+    import fiftyone as fo
+
+    sample = fo.Sample(filepath="/path/to/image.png")
+
+    dataset = fo.Dataset()
+    dataset.add_sample(sample)
+
+    print(dataset.media_type)  # image
+    print(sample)
+
+.. code-block:: text
+
+    <Sample: {
+        'id': '6655ca275e20e244f2c8fe31',
+        'media_type': 'image',
+        'filepath': '/path/to/image.png',
+        'tags': [],
+        'metadata': None,
+        'created_at': datetime.datetime(2024, 7, 22, 5, 15, 8, 122038),
+        'last_modified_at': datetime.datetime(2024, 7, 22, 5, 15, 8, 122038),
+    }>
+
+Example image dataset
+---------------------
+
+To get started exploring image datasets, try loading the
+:ref:`quickstart dataset <dataset-zoo-quickstart>` from the zoo:
+
+.. code:: python
+    :linenos:
+
+    import fiftyone as fo
+    import fiftyone.zoo as foz
+
+    dataset = foz.load_zoo_dataset("quickstart")
+
+    print(dataset.count("ground_truth.detections"))  # 1232
+    print(dataset.count("predictions.detections"))  # 5620
+    print(dataset.count_values("ground_truth.detections.label"))
+    # {'dog': 15, 'airplane': 24, 'dining table': 15, 'hot dog': 5, ...}
+
+    session = fo.launch_app(dataset)
+
+.. image:: /images/datasets/quickstart.gif
+   :alt: quickstart
+   :align: center
 
 .. _video-datasets:
 
@@ -4122,6 +4604,8 @@ as a video sample, and datasets composed of video samples have media type
         'filepath': '/path/to/video.mp4',
         'tags': [],
         'metadata': None,
+        'created_at': datetime.datetime(2024, 7, 22, 5, 3, 17, 229263),
+        'last_modified_at': datetime.datetime(2024, 7, 22, 5, 3, 17, 229263),
         'frames': <Frames: 0>,
     }>
 
@@ -4172,6 +4656,8 @@ dynamic attribute syntax that you use to
         'filepath': '/path/to/video.mp4',
         'tags': [],
         'metadata': None,
+        'created_at': datetime.datetime(2024, 7, 22, 5, 3, 17, 229263),
+        'last_modified_at': datetime.datetime(2024, 7, 22, 5, 3, 17, 229263),
         'frames': <Frames: 1>,    <-- `frames` now contains 1 frame of labels
     }>
 
@@ -4194,6 +4680,8 @@ You can iterate over the frames in a video sample using the expected syntax:
     <Frame: {
         'id': '6403cd972a54cee076f88bd2',
         'frame_number': 1,
+        'created_at': datetime.datetime(2024, 7, 22, 5, 3, 40, 839000),
+        'last_modified_at': datetime.datetime(2024, 7, 22, 5, 3, 40, 839000),
         'quality': 97.12,
         'weather': <Classification: {
             'id': '609078d54653b0094e9baa52',
@@ -4244,16 +4732,20 @@ Notice that the dataset's summary indicates that the dataset has media type
     Persistent:     False
     Tags:           []
     Sample fields:
-        id:       fiftyone.core.fields.ObjectIdField
-        filepath: fiftyone.core.fields.StringField
-        tags:     fiftyone.core.fields.ListField(fiftyone.core.fields.StringField)
-        metadata: fiftyone.core.fields.EmbeddedDocumentField(fiftyone.core.metadata.VideoMetadata)
+        id:               fiftyone.core.fields.ObjectIdField
+        filepath:         fiftyone.core.fields.StringField
+        tags:             fiftyone.core.fields.ListField(fiftyone.core.fields.StringField)
+        metadata:         fiftyone.core.fields.EmbeddedDocumentField(fiftyone.core.metadata.VideoMetadata)
+        created_at:       fiftyone.core.fields.DateTimeField
+        last_modified_at: fiftyone.core.fields.DateTimeField
     Frame fields:
-        id:           fiftyone.core.fields.ObjectIdField
-        frame_number: fiftyone.core.fields.FrameNumberField
-        quality:      fiftyone.core.fields.FloatField
-        weather:      fiftyone.core.fields.EmbeddedDocumentField(fiftyone.core.labels.Classification)
-        objects:      fiftyone.core.fields.EmbeddedDocumentField(fiftyone.core.labels.Detections)
+        id:               fiftyone.core.fields.ObjectIdField
+        frame_number:     fiftyone.core.fields.FrameNumberField
+        created_at:       fiftyone.core.fields.DateTimeField
+        last_modified_at: fiftyone.core.fields.DateTimeField
+        quality:          fiftyone.core.fields.FloatField
+        weather:          fiftyone.core.fields.EmbeddedDocumentField(fiftyone.core.labels.Classification)
+        objects:          fiftyone.core.fields.EmbeddedDocumentField(fiftyone.core.labels.Detections)
 
 You can retrieve detailed information about the schema of the frames of a
 video |Dataset| using
@@ -4281,6 +4773,8 @@ labels can be modified by updating the `frames` attribute of a |Sample|:
     <Frame: {
         'id': '6403cd972a54cee076f88bd2',
         'frame_number': 1,
+        'created_at': datetime.datetime(2024, 7, 22, 5, 3, 40, 839000),
+        'last_modified_at': datetime.datetime(2024, 7, 22, 5, 4, 49, 430051),
         'quality': 97.12,
         'weather': None,
         'objects': None,
@@ -4300,7 +4794,7 @@ Example video dataset
 ---------------------
 
 To get started exploring video datasets, try loading the
-:ref:`quickstart-video <dataset-zoo-quickstart-video>` dataset from the zoo:
+:ref:`quickstart-video dataset <dataset-zoo-quickstart-video>` from the zoo:
 
 .. code:: python
     :linenos:
@@ -4310,8 +4804,6 @@ To get started exploring video datasets, try loading the
 
     dataset = foz.load_zoo_dataset("quickstart-video")
 
-    print(dataset)
-
     print(dataset.count("frames"))  # 1279
     print(dataset.count("frames.detections.detections"))  # 11345
     print(dataset.count_values("frames.detections.detections.label"))
@@ -4319,22 +4811,9 @@ To get started exploring video datasets, try loading the
 
     session = fo.launch_app(dataset)
 
-.. code-block:: text
-
-    Name:        quickstart-video
-    Media type:  video
-    Num samples: 10
-    Persistent:  False
-    Tags:        []
-    Sample fields:
-        id:       fiftyone.core.fields.ObjectIdField
-        filepath: fiftyone.core.fields.StringField
-        tags:     fiftyone.core.fields.ListField(fiftyone.core.fields.StringField)
-        metadata: fiftyone.core.fields.EmbeddedDocumentField(fiftyone.core.metadata.VideoMetadata)
-    Frame fields:
-        id:           fiftyone.core.fields.ObjectIdField
-        frame_number: fiftyone.core.fields.FrameNumberField
-        detections:   fiftyone.core.fields.EmbeddedDocumentField(fiftyone.core.labels.Detections)
+.. image:: /images/datasets/quickstart-video.gif
+   :alt: quickstart-video
+   :align: center
 
 .. _3d-datasets:
 
@@ -4393,6 +4872,23 @@ serializes the scene into an FO3D file.
     dataset.add_sample(sample)
 
     print(dataset.media_type)  # 3d
+
+To modify an exising scene, load it via
+:meth:`Scene.from_fo3d() <fiftyone.core.threed.Scene.from_fo3d>`, perform any
+necessary updates, and then re-write it to disk:
+
+.. code-block:: python
+    :linenos:
+
+    import fiftyone as fo
+
+    scene = fo.Scene.from_fo3d("/path/to/scene.fo3d")
+
+    for node in scene.traverse():
+        if isinstance(node, fo.SphereGeometry):
+            node.visible = False
+
+    scene.write("/path/to/scene.fo3d")
 
 .. _3d-meshes:
 
@@ -4606,18 +5102,44 @@ to generate orthographic projection images of each scene:
     import fiftyone.zoo as foz
 
     # Load an example 3D dataset
-    dataset = (
-        foz.load_zoo_dataset("quickstart-groups")
-        .select_group_slices("pcd")
-        .clone()
+    dataset = foz.load_zoo_dataset("quickstart-3d")
+
+    # This dataset already has orthographic projections populated, but let's
+    # recompute them to demonstrate the idea
+    fou3d.compute_orthographic_projection_images(
+        dataset,
+        (-1, 512),  # (width, height) of each image; -1 means aspect-preserving
+        bounds=((-50, -50, -50), (50, 50, 50)),
+        projection_normal=(0, -1, 0),
+        output_dir="/tmp/quickstart-3d-proj",
+        shading_mode="height",
     )
+
+    session = fo.launch_app(dataset)
+
+Note that the method also supports :ref:`grouped datasets <groups>` that
+contain 3D slice(s):
+
+.. code-block:: python
+    :linenos:
+
+    import fiftyone as fo
+    import fiftyone.utils.utils3d as fou3d
+    import fiftyone.zoo as foz
+
+    # Load an example group dataset that contains a 3D slice
+    dataset = foz.load_zoo_dataset("quickstart-groups")
 
     # Populate orthographic projections
     fou3d.compute_orthographic_projection_images(dataset, (-1, 512), "/tmp/proj")
 
+    dataset.group_slice = "pcd"
     session = fo.launch_app(dataset)
 
 .. note::
+
+    Orthographic projection images currently only include point clouds, not
+    meshes or 3D shapes.
 
     If a scene contains multiple :ref:`point clouds <3d-point-clouds>`, you can
     control which point cloud to project by initializing it with
@@ -4632,15 +5154,34 @@ Refer to the
 :func:`compute_orthographic_projection_images() <fiftyone.utils.utils3d.compute_orthographic_projection_images>`
 documentation for available parameters to customize the projections.
 
-.. _example-3d-dataset:
+.. _example-3d-datasets:
 
-Example 3D dataset
-------------------
+Example 3D datasets
+-------------------
 
 To get started exploring 3D datasets, try loading the
-:ref:`quickstart-groups <dataset-zoo-quickstart-groups>` dataset from the zoo
-and :ref:`clone <saving-and-cloning-views>` the point cloud slice into a
-standalone dataset:
+:ref:`quickstart-3d dataset <dataset-zoo-quickstart-3d>` from the zoo:
+
+.. code:: python
+    :linenos:
+
+    import fiftyone as fo
+    import fiftyone.zoo as foz
+
+    dataset = foz.load_zoo_dataset("quickstart-3d")
+
+    print(dataset.count_values("ground_truth.label"))
+    # {'bottle': 5, 'stairs': 5, 'keyboard': 5, 'car': 5, ...}
+
+    session = fo.launch_app(dataset)
+
+.. image:: /images/datasets/quickstart-3d.gif
+   :alt: quickstart-3d
+   :align: center
+
+Also check out the
+:ref:`quickstart-groups dataset <dataset-zoo-quickstart-groups>`, which
+contains a point cloud slice:
 
 .. code:: python
     :linenos:
@@ -4649,38 +5190,21 @@ standalone dataset:
     import fiftyone.utils.utils3d as fou3d
     import fiftyone.zoo as foz
 
-    dataset = (
-        foz.load_zoo_dataset("quickstart-groups")
-        .select_group_slices("pcd")
-        .clone()
-    )
+    dataset = foz.load_zoo_dataset("quickstart-groups")
 
     # Populate orthographic projections
     fou3d.compute_orthographic_projection_images(dataset, (-1, 512), "/tmp/proj")
-
-    print(dataset)
 
     print(dataset.count("ground_truth.detections"))  # 1100
     print(dataset.count_values("ground_truth.detections.label"))
     # {'Pedestrian': 133, 'Car': 774, ...}
 
+    dataset.group_slice = "pcd"
     session = fo.launch_app(dataset)
 
-.. code-block:: text
-
-    Name:        2024.04.13.15.21.08
-    Media type:  3d
-    Num samples: 200
-    Persistent:  False
-    Tags:        []
-    Sample fields:
-        id:                               fiftyone.core.fields.ObjectIdField
-        filepath:                         fiftyone.core.fields.StringField
-        tags:                             fiftyone.core.fields.ListField(fiftyone.core.fields.StringField)
-        metadata:                         fiftyone.core.fields.EmbeddedDocumentField(fiftyone.core.metadata.Metadata)
-        group:                            fiftyone.core.fields.EmbeddedDocumentField(fiftyone.core.groups.Group)
-        ground_truth:                     fiftyone.core.fields.EmbeddedDocumentField(fiftyone.core.labels.Detections)
-        orthographic_projection_metadata: fiftyone.core.fields.EmbeddedDocumentField(fiftyone.utils.utils3d.OrthographicProjectionMetadata)
+.. image:: /images/datasets/quickstart-groups.gif
+   :alt: quickstart-groups
+   :align: center
 
 .. _point-cloud-datasets:
 
@@ -4721,6 +5245,8 @@ composed of point cloud samples have media type `point-cloud`:
         'filepath': '/path/to/point-cloud.pcd',
         'tags': [],
         'metadata': None,
+        'created_at': datetime.datetime(2024, 7, 22, 5, 16, 10, 701907),
+        'last_modified_at': datetime.datetime(2024, 7, 22, 5, 16, 10, 701907),
     }>
 
 Point cloud samples may contain any type and number of custom fields, including

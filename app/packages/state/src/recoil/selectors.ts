@@ -15,7 +15,7 @@ import { v4 as uuid } from "uuid";
 import * as atoms from "./atoms";
 import { config } from "./config";
 import { dataset as datasetAtom } from "./dataset";
-import { currentModalSample, isModalActive, modalSample } from "./modal";
+import { isModalActive, modalSample, modalSelector } from "./modal";
 import { pathFilter } from "./pathFilters";
 import { State } from "./types";
 import { isPatchesView } from "./view";
@@ -92,14 +92,9 @@ export const isVideoDataset = selector({
   get: ({ get }) => get(atoms.mediaType) === "video",
 });
 
-export const isPointcloudDataset = selector({
-  key: "isPointcloudDataset",
-  get: ({ get }) => get(atoms.mediaType) === "point_cloud",
-});
-
 export const is3DDataset = selector({
   key: "is3DDataset",
-  get: ({ get }) => get(atoms.mediaType) === "three_d",
+  get: ({ get }) => ["point_cloud", "three_d"].includes(get(atoms.mediaType)),
 });
 
 export const timeZone = selector<string>({
@@ -146,6 +141,28 @@ export const datasetAppConfig = graphQLSyncFragmentAtom<
     key: "datasetAppConfig",
   }
 );
+
+export const disableFrameFiltering = selector<boolean>({
+  key: "disableFrameFiltering",
+  get: ({ get }) => {
+    const datasetDisableFrameFiltering =
+      get(datasetAppConfig)?.disableFrameFiltering;
+    const globalDisableFrameFiltering = Boolean(
+      get(appConfigOption({ modal: true, key: "disableFrameFiltering" }))
+    );
+
+    return datasetDisableFrameFiltering !== null
+      ? datasetDisableFrameFiltering
+      : globalDisableFrameFiltering;
+  },
+});
+
+export const dynamicGroupsTargetFrameRate = selector<number>({
+  key: "dynamicGroupsTargetFrameRate",
+  get: ({ get }) => {
+    return get(datasetAppConfig)?.dynamicGroupsTargetFrameRate ?? 30;
+  },
+});
 
 export const defaultTargets = selector({
   key: "defaultTargets",
@@ -449,6 +466,7 @@ export const extendedStagesUnsorted = selector({
     const extendedSelectionOverrideStage = get(
       atoms.extendedSelectionOverrideStage
     );
+
     if (extendedSelectionOverrideStage) {
       return extendedSelectionOverrideStage;
     }
@@ -490,7 +508,7 @@ export const selectedPatchIds = selectorFamily({
   get:
     (patchesField) =>
     ({ get }) => {
-      const modal = get(currentModalSample);
+      const modal = get(modalSelector);
       const isPatches = get(isPatchesView);
       const selectedSamples = get(atoms.selectedSamples);
       const selectedSampleObjects = get(atoms.selectedSampleObjects);
@@ -571,4 +589,20 @@ export const hasSelectedSamples = selector<boolean>({
     const selected = get(atoms.selectedSamples);
     return selected.size > 0;
   },
+});
+
+export const frameFieldsList = selector({
+  key: "frameFieldsList",
+  get: ({ get }) => {
+    const fields = get(atoms.frameFields);
+    return fields.map((f) => `frames.${f.path}`);
+  },
+});
+
+export const isFrameField = selectorFamily({
+  key: "isFrameField",
+  get:
+    (path: string) =>
+    ({ get }) =>
+      get(frameFieldsList).some((p) => path.startsWith(p)),
 });

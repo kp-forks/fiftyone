@@ -1,10 +1,11 @@
 """
 DICOM utilities.
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
+
 import logging
 import os
 import warnings
@@ -16,7 +17,7 @@ import eta.core.utils as etau
 import fiftyone.core.utils as fou
 import fiftyone.utils.data as foud
 
-fou.ensure_package("pydicom")
+fou.ensure_package("pydicom<3")
 import pydicom
 from pydicom.fileset import FileInstance, FileSet
 

@@ -1,8 +1,8 @@
 /**
- * Copyright 2017-2024, Voxel51, Inc.
+ * Copyright 2017-2025, Voxel51, Inc.
  */
 
-import { BufferManager } from "./lookers/imavid/buffer-manager";
+import { BufferManager } from "@fiftyone/utilities";
 import { ImaVidFramesController } from "./lookers/imavid/controller";
 import { Overlay } from "./overlays/base";
 
@@ -65,8 +65,9 @@ export type OrthogrpahicProjectionMetadata = {
   filepath: string;
   height: number;
   width: number;
-  min_bound: [number, number];
-  max_bound: [number, number];
+  min_bound: [number, number, number];
+  max_bound: [number, number, number];
+  normal: [number, number, number];
 };
 
 export type GenericLabel = {
@@ -153,6 +154,7 @@ export interface KeypointSkeleton {
 interface BaseOptions {
   highlight: boolean;
   activePaths: string[];
+  fontSize?: number;
   filter: (path: string, value: unknown) => boolean;
   coloring: Coloring;
   customizeColorSetting: CustomizeColor[];
@@ -171,9 +173,9 @@ interface BaseOptions {
   showTooltip: boolean;
   onlyShowHoveredLabel: boolean;
   smoothMasks: boolean;
-  fullscreen: boolean;
   zoomPad: number;
   selected: boolean;
+  shouldHandleKeyEvents?: boolean;
   inSelectionMode: boolean;
   timeZone: string;
   mimetype: string;
@@ -199,7 +201,9 @@ export interface BaseConfig {
   src: string;
   sources: { [path: string]: string };
   sampleId: string;
+  symbol: symbol;
   fieldSchema: Schema;
+  isDynamicGroup: boolean;
   view: Stage[];
   dataset: string;
   group?: {
@@ -216,6 +220,7 @@ export interface FrameConfig extends BaseConfig {
 export type ImageConfig = BaseConfig;
 
 export interface VideoConfig extends BaseConfig {
+  enableTimeline: boolean;
   frameRate: number;
   support?: [number, number];
 }
@@ -295,7 +300,6 @@ export interface BaseState {
   showOptions: boolean;
   config: BaseConfig;
   options: BaseOptions;
-  shouldHandleKeyEvents: boolean;
   scale: number;
   pan: Coordinates;
   panning: boolean;
@@ -338,6 +342,7 @@ export interface ImageState extends BaseState {
 }
 
 export interface VideoState extends BaseState {
+  buffers: Buffers;
   config: VideoConfig;
   options: VideoOptions;
   seeking: boolean;
@@ -350,6 +355,7 @@ export interface VideoState extends BaseState {
   SHORTCUTS: Readonly<ControlMap<VideoState>>;
   hasPoster: boolean;
   waitingForVideo: boolean;
+  waitingToStream: boolean;
   lockedToSupport: boolean;
 }
 
@@ -375,11 +381,6 @@ export interface ImaVidState extends BaseState {
    * current frame number
    */
   currentFrameNumber: number;
-  /**
-   * current frame number is usually synced from the player's state,
-   * if this flag is true, then the sync happens in the opposite direction
-   */
-  isCurrentFrameNumberAuthoritative: boolean;
   /**
    * total number of frames
    */
@@ -448,7 +449,6 @@ export const DEFAULT_BASE_OPTIONS: BaseOptions = {
   },
   customizeColorSetting: [],
   smoothMasks: true,
-  fullscreen: false,
   zoomPad: 0.2,
   selected: false,
   inSelectionMode: false,
@@ -462,6 +462,7 @@ export const DEFAULT_BASE_OPTIONS: BaseOptions = {
   pointFilter: (path: string, point: Point) => true,
   attributeVisibility: {},
   mediaFallback: false,
+  shouldHandleKeyEvents: true,
 };
 
 export const DEFAULT_FRAME_OPTIONS: FrameOptions = {

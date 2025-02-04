@@ -1,9 +1,9 @@
 /**
- * Copyright 2017-2024, Voxel51, Inc.
+ * Copyright 2017-2025, Voxel51, Inc.
  */
 
 export { createColorGenerator, getRGB } from "@fiftyone/utilities";
-export { freeVideos } from "./elements/util";
+export { freeVideos, getFrameNumber } from "./elements/util";
 export * from "./lookers";
 export type { PointInfo } from "./overlays";
 export type {
@@ -14,6 +14,7 @@ export type {
   FrameOptions,
   ImageConfig,
   ImageOptions,
+  KeypointSkeleton,
   LabelData,
   Point,
   Sample,

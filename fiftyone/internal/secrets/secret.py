@@ -1,7 +1,7 @@
 """
 FiftyOne secret types
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
@@ -87,7 +87,7 @@ class AbstractSecret(ISecret, abc.ABC):
 
 class UnencryptedSecret(AbstractSecret):
     """
-    Fiftyone secret with plaintext value.
+    FiftyOne secret with plaintext value.
     """
 
     def __init__(self, key: str, value: str):

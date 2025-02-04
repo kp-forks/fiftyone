@@ -17,13 +17,13 @@ import {
   LABEL_LISTS,
   LABEL_LISTS_MAP,
   LIST_FIELD,
-  meetsFieldType,
   OBJECT_ID_FIELD,
+  STRING_FIELD,
   Schema,
   StrictField,
-  STRING_FIELD,
   VALID_NUMERIC_TYPES,
   VALID_PRIMITIVE_TYPES,
+  meetsFieldType,
   withPath,
 } from "@fiftyone/utilities";
 import { RecoilState, selector, selectorFamily } from "recoil";
@@ -259,7 +259,10 @@ export const field = selectorFamily<Field | null, string>({
     (path) =>
     ({ get }) => {
       let keys = path.split(".");
-      if (keys[0] === "frames") {
+      if (
+        keys[0] === "frames" &&
+        Object.keys(get(fieldSchema({ space: State.SPACE.FRAME }))).length
+      ) {
         keys = keys.slice(1);
 
         let schema = get(fieldSchema({ space: State.SPACE.FRAME }));
@@ -786,7 +789,11 @@ export const isOfDocumentFieldList = selectorFamily({
   get:
     (path: string) =>
     ({ get }) => {
-      const f = get(field(path.split(".")[0]));
+      const parent = path.split(".").slice(0, -1).join(".");
+      if (!parent) {
+        return false;
+      }
+      const f = get(field(parent));
 
       return [
         DYNAMIC_EMBEDDED_DOCUMENT_FIELD,

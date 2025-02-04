@@ -1,10 +1,10 @@
 import * as fos from "@fiftyone/state";
 import { isMatchingAtom, stringExcludeAtom } from "@fiftyone/state";
-import { getFetchFunction } from "@fiftyone/utilities";
+import { getFetchFunction, isObjectIdString } from "@fiftyone/utilities";
 import { atomFamily, selectorFamily } from "recoil";
 import { labelTagsCount } from "../../Sidebar/Entries/EntryCounts";
 import { nullSort } from "../utils";
-import { Result } from "./Result";
+import type { Result } from "./Result";
 
 export const stringSearch = atomFamily<
   string,
@@ -57,6 +57,11 @@ export const stringSearchResults = selectorFamily<
     ({ path, modal, filter }) =>
     async ({ get }) => {
       const search = filter ? "" : get(stringSearch({ modal, path }));
+      // for object id searches, skip request when the string is not <= 24 hex
+      if (get(fos.isObjectIdField(path)) && !isObjectIdString(search, false)) {
+        return { values: [] };
+      }
+
       const sorting = get(fos.sortFilterResults(modal));
       const mixed = get(fos.groupStatistics(modal)) === "group";
       const selected = get(fos.stringSelectedValuesAtom({ path, modal }));
@@ -67,13 +72,18 @@ export const stringSearchResults = selectorFamily<
         count: 0,
       };
 
-      if (!modal && get(fos.isLightningPath(path))) {
+      if (!modal && get(fos.queryPerformance)) {
+        const filters = Object.fromEntries(
+          Object.entries(get(fos.filters) || {}).filter(([p]) => p !== path)
+        );
+
         return {
           values: get(
             fos.lightningStringResults({
               path,
               search,
               exclude: [...selected.filter((s) => s !== null)] as string[],
+              filters,
             })
           )?.map((value) => ({ value, count: null })),
         };

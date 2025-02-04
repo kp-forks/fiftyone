@@ -14,14 +14,20 @@ const test = base.extend<{ sidebar: SidebarPom; grid: GridPom }>({
   },
 });
 
-test.describe("classification-sidebar-filter-visibility", () => {
-  test.beforeAll(async ({ fiftyoneLoader }) => {
-    await fiftyoneLoader.loadZooDataset("cifar10", datasetName, {
-      max_samples: 5,
-      split: "test",
-    });
-  });
+test.afterAll(async ({ foWebServer }) => {
+  await foWebServer.stopWebServer();
+});
 
+test.beforeAll(async ({ fiftyoneLoader, foWebServer }) => {
+  await foWebServer.startWebServer();
+
+  await fiftyoneLoader.loadZooDataset("cifar10", datasetName, {
+    max_samples: 5,
+    split: "test",
+  });
+});
+
+test.describe.serial("classification-sidebar-filter-visibility", () => {
   test.beforeEach(async ({ page, fiftyoneLoader }) => {
     await fiftyoneLoader.waitUntilGridVisible(page, datasetName);
   });
@@ -53,7 +59,7 @@ test.describe("classification-sidebar-filter-visibility", () => {
       "show-label"
     );
     await gridRefreshedEventPromise;
-    await expect(await grid.getNthFlashlightSection(0)).toHaveScreenshot(
+    await expect(await grid.getForwardSection()).toHaveScreenshot(
       "visible-cat.png",
       { animations: "allow" }
     );
@@ -65,7 +71,7 @@ test.describe("classification-sidebar-filter-visibility", () => {
       "hide-label"
     );
     await gridRefreshedEventPromise;
-    await expect(await grid.getNthFlashlightSection(0)).toHaveScreenshot(
+    await expect(await grid.getForwardSection()).toHaveScreenshot(
       "not-visible-cat.png",
       { animations: "allow" }
     );
@@ -99,7 +105,7 @@ test.describe("classification-sidebar-filter-visibility", () => {
 
     // verify the number of samples in the result
     await grid.assert.isEntryCountTextEqualTo("3 of 5 samples");
-    await expect(await grid.getNthFlashlightSection(0)).toHaveScreenshot(
+    await expect(await grid.getForwardSection()).toHaveScreenshot(
       "show-frog.png",
       { animations: "allow" }
     );
@@ -120,7 +126,7 @@ test.describe("classification-sidebar-filter-visibility", () => {
       "show-label"
     );
     await gridRefreshedEventPromise;
-    await expect(await grid.getNthFlashlightSection(0)).toHaveScreenshot(
+    await expect(await grid.getForwardSection()).toHaveScreenshot(
       "show-frog-ship-visible-frog.png",
       { animations: "allow" }
     );
@@ -132,7 +138,7 @@ test.describe("classification-sidebar-filter-visibility", () => {
       "hide-label"
     );
     await gridRefreshedEventPromise;
-    await expect(await grid.getNthFlashlightSection(0)).toHaveScreenshot(
+    await expect(await grid.getForwardSection()).toHaveScreenshot(
       "show-frog-ship-invisible-frog.png",
       { animations: "allow" }
     );
@@ -156,7 +162,7 @@ test.describe("classification-sidebar-filter-visibility", () => {
       "omit-samples-with-label"
     );
 
-    await expect(await grid.getNthFlashlightSection(0)).toHaveScreenshot(
+    await expect(await grid.getForwardSection()).toHaveScreenshot(
       "hide-ship.png",
       { animations: "allow" }
     );
@@ -178,7 +184,7 @@ test.describe("classification-sidebar-filter-visibility", () => {
       "show-label"
     );
     await gridRefreshedEventPromise;
-    await expect(await grid.getNthFlashlightSection(0)).toHaveScreenshot(
+    await expect(await grid.getForwardSection()).toHaveScreenshot(
       "hide-ship-visible-cat.png",
       { animations: "allow" }
     );
@@ -190,7 +196,7 @@ test.describe("classification-sidebar-filter-visibility", () => {
       "hide-label"
     );
     await gridRefreshedEventPromise;
-    await expect(await grid.getNthFlashlightSection(0)).toHaveScreenshot(
+    await expect(await grid.getForwardSection()).toHaveScreenshot(
       "hide-ship-invisible-cat.png",
       { animations: "allow" }
     );

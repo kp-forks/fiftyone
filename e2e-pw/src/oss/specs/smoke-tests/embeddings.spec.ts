@@ -1,28 +1,36 @@
 import { test as base } from "src/oss/fixtures";
 import { GridPom } from "src/oss/poms/grid";
 import { EmbeddingsPom } from "src/oss/poms/panels/embeddings-panel";
-import { PanelPom } from "src/oss/poms/panels/panel";
-import { getUniqueDatasetNameWithPrefix } from "src/oss/utils";
+import { GridPanelPom } from "src/oss/poms/panels/grid-panel";
+import { Duration, getUniqueDatasetNameWithPrefix } from "src/oss/utils";
 
 const datasetName = getUniqueDatasetNameWithPrefix("smoke-quickstart");
 
 const test = base.extend<{
   embeddings: EmbeddingsPom;
   grid: GridPom;
-  panel: PanelPom;
+  panel: GridPanelPom;
 }>({
   grid: async ({ eventUtils, page }, use) => {
     await use(new GridPom(page, eventUtils));
   },
   panel: async ({ page }, use) => {
-    await use(new PanelPom(page));
+    await use(new GridPanelPom(page));
   },
   embeddings: async ({ eventUtils, page }, use) => {
     await use(new EmbeddingsPom(page, eventUtils));
   },
 });
 
-test.beforeAll(async ({ fiftyoneLoader }) => {
+test.afterAll(async ({ foWebServer }) => {
+  await foWebServer.stopWebServer();
+});
+
+test.beforeAll(async ({ fiftyoneLoader, foWebServer }, testInfo) => {
+  // embeddings generation may take a while on slow computers
+  testInfo.setTimeout(Duration.Minutes(2));
+
+  await foWebServer.startWebServer();
   await fiftyoneLoader.executePythonCode(
     `
         import fiftyone as fo
@@ -42,31 +50,22 @@ test.beforeAll(async ({ fiftyoneLoader }) => {
   );
 });
 
-test.beforeEach(async ({ fiftyoneLoader, page }) => {
+test.beforeEach(async ({ fiftyoneLoader, page }, testInfo) => {
+  testInfo.setTimeout(Duration.Minutes(2));
+
   await fiftyoneLoader.waitUntilGridVisible(page, datasetName);
 });
 
-test.describe("embeddings on quickstart dataset", () => {
+test.describe.serial("embeddings on quickstart dataset", () => {
   test("embeddings panel opens", async ({
     embeddings,
     panel,
   }: {
     embeddings: EmbeddingsPom;
-    panel: PanelPom;
+    panel: GridPanelPom;
   }) => {
     await panel.open("Embeddings");
     await embeddings.asserter.verifySelectorVisible();
-    await panel.close();
-  });
-
-  test("lasso samples work", async ({
-    embeddings,
-    panel,
-  }: {
-    embeddings: EmbeddingsPom;
-    panel: PanelPom;
-  }) => {
-    await panel.open("Embeddings");
     await embeddings.asserter.verifyLassoSelectsSamples();
     await panel.close();
   });

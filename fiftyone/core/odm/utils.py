@@ -1,7 +1,7 @@
 """
 Utilities for documents.
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
@@ -9,12 +9,13 @@ from datetime import date, datetime
 import inspect
 import json
 import numbers
-import six
 import sys
 
 from bson import Binary, json_util, ObjectId, SON
 import numpy as np
 import pytz
+
+import eta.core.utils as etau
 
 import fiftyone as fo
 import fiftyone.core.fields as fof
@@ -110,7 +111,7 @@ def deserialize_value(value):
 
         return value
 
-    if isinstance(value, six.binary_type):
+    if isinstance(value, bytes):
         # Serialized array in non-extended format
         return fou.deserialize_numpy_array(value)
 
@@ -183,6 +184,8 @@ def create_field(
     db_field=None,
     description=None,
     info=None,
+    read_only=False,
+    created_at=None,
     **kwargs,
 ):
     """Creates the field defined by the given specification.
@@ -214,6 +217,8 @@ def create_field(
             ``name`` is used
         description (None): an optional description
         info (None): an optional info dict
+        read_only (False): whether the field should be read-only
+        created_at (None): the datetime the field was created
 
     Returns:
         a :class:`fiftyone.core.fields.Field`
@@ -224,9 +229,13 @@ def create_field(
         else:
             db_field = name
 
-    # All user-defined fields are nullable
     field_kwargs = dict(
-        null=True, db_field=db_field, description=description, info=info
+        null=True,  # all user-defined fields are nullable
+        db_field=db_field,
+        description=description,
+        info=info,
+        read_only=read_only,
+        created_at=created_at,
     )
     field_kwargs.update(kwargs)
 
@@ -295,11 +304,15 @@ def get_field_kwargs(field):
     """Constructs the field keyword arguments dictionary for the given field.
 
     Args:
-        field: a :class:`fiftyone.core.fields.Field`
+        field: a :class:`fiftyone.core.fields.Field` or ``str(field)``
+            representation of one
 
     Returns:
         a field specification dict
     """
+    if etau.is_str(field):
+        return _parse_field_str(field)
+
     fields = []
 
     kwargs = {
@@ -308,6 +321,8 @@ def get_field_kwargs(field):
         "db_field": field.db_field,
         "description": field.description,
         "info": field.info,
+        "read_only": field.read_only,
+        "created_at": field.created_at,
     }
 
     if isinstance(field, (fof.ListField, fof.DictField)):
@@ -322,6 +337,24 @@ def get_field_kwargs(field):
                 _kwargs = get_field_kwargs(f)
                 _kwargs["name"] = f.name
                 fields.append(_kwargs)
+
+    return kwargs
+
+
+def _parse_field_str(field_str):
+    # eg: "fiftyone.core.fields.EmbeddedDocumentField(fiftyone.core.labels.Detections)"
+    chunks = field_str.strip().split("(", 1)
+    ftype = etau.get_class(chunks[0])
+    kwargs = {"ftype": ftype}
+
+    if len(chunks) > 1:
+        param = etau.get_class(chunks[1][:-1])  # remove trailing ")"
+        if issubclass(ftype, fof.EmbeddedDocumentField):
+            kwargs["embedded_doc_type"] = param
+        elif issubclass(ftype, (fof.ListField, fof.DictField)):
+            kwargs["subfield"] = param
+        else:
+            raise ValueError("Failed to parse field string '%s'" % field_str)
 
     return kwargs
 
@@ -353,7 +386,7 @@ def get_implied_field_kwargs(value, dynamic=False):
     if isinstance(value, numbers.Number):
         return {"ftype": fof.FloatField}
 
-    if isinstance(value, six.string_types):
+    if isinstance(value, str):
         return {"ftype": fof.StringField}
 
     if isinstance(value, ObjectId):
@@ -406,6 +439,8 @@ def _get_field_kwargs(value, field, dynamic):
         "db_field": field.db_field,
         "description": field.description,
         "info": field.info,
+        "read_only": field.read_only,
+        "created_at": field.created_at,
     }
 
     if isinstance(field, (fof.ListField, fof.DictField)):
@@ -570,7 +605,7 @@ def _get_field_type(value):
     if isinstance(value, numbers.Number):
         return fof.FloatField
 
-    if isinstance(value, six.string_types):
+    if isinstance(value, str):
         return fof.StringField
 
     if isinstance(value, ObjectId):
@@ -623,7 +658,8 @@ class DocumentRegistry(object):
             pass
 
         # Then full module list
-        for module in sys.modules.values():
+        all_modules = sys.modules.copy().values()
+        for module in all_modules:
             try:
                 cls = self._get_cls(module, name)
                 self._cache[name] = cls

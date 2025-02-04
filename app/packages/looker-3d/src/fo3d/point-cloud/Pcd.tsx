@@ -1,16 +1,16 @@
 import { getSampleSrc } from "@fiftyone/state";
 import { useLoader } from "@react-three/fiber";
-import { useMemo, useRef } from "react";
-import { Quaternion, Vector3 } from "three";
+import { useEffect, useMemo, useRef } from "react";
+import type { Quaternion, Vector3 } from "three";
 import { PCDLoader } from "three/examples/jsm/loaders/PCDLoader";
-import { PcdAsset } from "../../hooks";
+import type { PcdAsset } from "../../hooks";
 import { useFo3dContext } from "../context";
 import { getResolvedUrlForFo3dAsset } from "../utils";
 import { usePcdMaterial } from "./use-pcd-material";
 
 export const Pcd = ({
   name,
-  pcd: { pcdPath, preTransformedPcdPath, defaultMaterial },
+  pcd: { pcdPath, preTransformedPcdPath, defaultMaterial, centerGeometry },
   position,
   quaternion,
   scale,
@@ -32,7 +32,17 @@ export const Pcd = ({
     [pcdPath, preTransformedPcdPath, fo3dRoot]
   );
 
-  const points = useLoader(PCDLoader, pcdUrl);
+  const points_ = useLoader(PCDLoader, pcdUrl);
+
+  // todo: hack until https://github.com/pmndrs/react-three-fiber/issues/245 is fixed
+  const points = useMemo(() => points_.clone(false), [points_]);
+
+  useEffect(() => {
+    if (points && centerGeometry) {
+      points.geometry.center();
+    }
+  }, [points, centerGeometry]);
+
   const pcdContainerRef = useRef();
 
   const pointsMaterialElement = usePcdMaterial(

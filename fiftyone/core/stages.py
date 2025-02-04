@@ -1,7 +1,7 @@
 """
 View stages.
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
@@ -95,6 +95,24 @@ class ViewStage(object):
         -   ``True``: this stage *dynamically groups* the input collection
         -   ``False``: this stage *flattens* dynamic groups
         -   ``None``: this stage does not change group status
+        """
+        return None
+
+    def get_edited_fields(self, sample_collection, frames=False):
+        """Returns a list of names of fields or embedded fields that may have
+        been edited by the stage, if any.
+
+        The ``"frames."`` prefix should be omitted when ``frames`` is True.
+
+        Args:
+            sample_collection: the
+                :class:`fiftyone.core.collections.SampleCollection` to which
+                the stage is being applied
+            frames (False): whether to return sample-level (False) or
+                frame-level (True) fields
+
+        Returns:
+            a list of fields, or ``None`` if no fields have been edited
         """
         return None
 
@@ -1400,6 +1418,28 @@ class ExcludeLabels(ViewStage):
         """Whether to omit samples that have no labels after filtering."""
         return self._omit_empty
 
+    def get_edited_fields(self, sample_collection, frames=False):
+        if self._labels is not None:
+            fields = self._labels_map.keys()
+        elif self._fields is not None:
+            fields = self._fields
+        else:
+            fields = sample_collection._get_label_fields()
+
+        edited_fields = []
+
+        for field in fields:
+            field_name, is_frame_field = sample_collection._handle_frame_field(
+                field
+            )
+            if frames == is_frame_field:
+                edited_fields.append(field_name)
+
+        if edited_fields:
+            return edited_fields
+
+        return None
+
     def get_filtered_fields(self, sample_collection, frames=False):
         if self._labels is not None:
             fields = self._labels_map.keys()
@@ -1784,6 +1824,16 @@ class FilterField(ViewStage):
     def only_matches(self):
         """Whether to only include samples that match the filter."""
         return self._only_matches
+
+    def get_edited_fields(self, sample_collection, frames=False):
+        field_name, is_frame_field = sample_collection._handle_frame_field(
+            self._field
+        )
+
+        if frames == is_frame_field:
+            return [field_name]
+
+        return None
 
     def to_mongo(self, sample_collection):
         field_name, is_frame_field = sample_collection._handle_frame_field(
@@ -2306,6 +2356,16 @@ class FilterLabels(ViewStage):
         """
         return self._trajectories
 
+    def get_edited_fields(self, sample_collection, frames=False):
+        field_name, is_frame_field = sample_collection._handle_frame_field(
+            self._field
+        )
+
+        if frames == is_frame_field:
+            return [field_name]
+
+        return None
+
     def get_filtered_fields(self, sample_collection, frames=False):
         if self._is_labels_list_field and (frames == self._is_frame_field):
             list_path, _ = sample_collection._handle_frame_field(
@@ -2719,6 +2779,16 @@ class FilterKeypoints(ViewStage):
         """Whether to only include samples that match the filter."""
         return self._only_matches
 
+    def get_edited_fields(self, sample_collection, frames=False):
+        field_name, is_frame_field = sample_collection._handle_frame_field(
+            self._field
+        )
+
+        if frames == is_frame_field:
+            return [field_name]
+
+        return None
+
     def to_mongo(self, sample_collection):
         label_type, root_path = sample_collection._get_label_field_path(
             self._field
@@ -2947,14 +3017,20 @@ def _extract_filter_field(val):
 
 
 class _GeoStage(ViewStage):
-    def __init__(self, location_field):
+    def __init__(self, location_field=None, create_index=True):
         self._location_field = location_field
         self._location_key = None
+        self._create_index = create_index
 
     @property
     def location_field(self):
         """The location field."""
         return self._location_field
+
+    @property
+    def create_index(self):
+        """Whether to create the required spherical index, if necessary."""
+        return self._create_index
 
     def validate(self, sample_collection):
         if self._location_field is None:
@@ -2969,8 +3045,9 @@ class _GeoStage(ViewStage):
             # Assume the user directly specified the subfield to use
             self._location_key = self._location_field
 
-        # These operations require a spherical index
-        sample_collection.create_index([(self._location_key, "2dsphere")])
+        if self._create_index:
+            # These operations require a spherical index
+            sample_collection.create_index([(self._location_key, "2dsphere")])
 
 
 class GeoNear(_GeoStage):
@@ -3058,6 +3135,8 @@ class GeoNear(_GeoStage):
         query (None): an optional dict defining a
             `MongoDB read query <https://docs.mongodb.com/manual/tutorial/query-documents/#read-operations-query-argument>`_
             that samples must match in order to be included in this view
+        create_index (True): whether to create the required spherical index,
+            if necessary
     """
 
     def __init__(
@@ -3067,8 +3146,12 @@ class GeoNear(_GeoStage):
         min_distance=None,
         max_distance=None,
         query=None,
+        create_index=True,
     ):
-        super().__init__(location_field)
+        super().__init__(
+            location_field=location_field,
+            create_index=create_index,
+        )
         self._point = foug.parse_point(point)
         self._min_distance = min_distance
         self._max_distance = max_distance
@@ -3125,6 +3208,7 @@ class GeoNear(_GeoStage):
             ["min_distance", self._min_distance],
             ["max_distance", self._max_distance],
             ["query", self._query],
+            ["create_index", self._create_index],
         ]
 
     @classmethod
@@ -3154,6 +3238,12 @@ class GeoNear(_GeoStage):
                 "type": "NoneType|dict",
                 "placeholder": "",
                 "default": "None",
+            },
+            {
+                "name": "create_index",
+                "type": "bool",
+                "default": "True",
+                "placeholder": "create_index (default=True)",
             },
         ]
 
@@ -3205,10 +3295,20 @@ class GeoWithin(_GeoStage):
         strict (True): whether a sample's location data must strictly fall
             within boundary (True) in order to match, or whether any
             intersection suffices (False)
+
     """
 
-    def __init__(self, boundary, location_field=None, strict=True):
-        super().__init__(location_field)
+    def __init__(
+        self,
+        boundary,
+        location_field=None,
+        strict=True,
+        create_index=True,
+    ):
+        super().__init__(
+            location_field=location_field,
+            create_index=create_index,
+        )
         self._boundary = foug.parse_polygon(boundary)
         self._strict = strict
 
@@ -3237,6 +3337,7 @@ class GeoWithin(_GeoStage):
             ["boundary", self._boundary],
             ["location_field", self._location_field],
             ["strict", self._strict],
+            ["create_index", self._create_index],
         ]
 
     @classmethod
@@ -3254,6 +3355,12 @@ class GeoWithin(_GeoStage):
                 "type": "bool",
                 "default": "True",
                 "placeholder": "strict (default=True)",
+            },
+            {
+                "name": "create_index",
+                "type": "bool",
+                "default": "True",
+                "placeholder": "create_index (default=True)",
             },
         ]
 
@@ -3416,7 +3523,7 @@ class GroupBy(ViewStage):
         )
 
         if match_expr is not None:
-            pipeline.append({"$match": match_expr})
+            pipeline.append({"$match": {"$expr": match_expr}})
 
         if sort_expr is not None:
             order = -1 if self._reverse else 1
@@ -3898,6 +4005,16 @@ class LimitLabels(ViewStage):
         """The maximum number of labels to allow in each labels list."""
         return self._limit
 
+    def get_edited_fields(self, sample_collection, frames=False):
+        field_name, is_frame_field = sample_collection._handle_frame_field(
+            self._field
+        )
+
+        if frames == is_frame_field:
+            return [field_name]
+
+        return None
+
     def get_filtered_fields(self, sample_collection, frames=False):
         if frames == self._is_frame_field:
             list_path, _ = sample_collection._handle_frame_field(
@@ -4060,6 +4177,16 @@ class MapLabels(ViewStage):
     def map(self):
         """The labels map dict."""
         return self._map
+
+    def get_edited_fields(self, sample_collection, frames=False):
+        field_name, is_frame_field = sample_collection._handle_frame_field(
+            self._field
+        )
+
+        if frames == is_frame_field:
+            return [field_name]
+
+        return None
 
     def to_mongo(self, sample_collection):
         labels_field = _parse_labels_field(sample_collection, self._field)[0]
@@ -4226,6 +4353,16 @@ class SetField(ViewStage):
     def expr(self):
         """The expression to apply."""
         return self._expr
+
+    def get_edited_fields(self, sample_collection, frames=False):
+        field_name, is_frame_field = sample_collection._handle_frame_field(
+            self._field
+        )
+
+        if frames == is_frame_field:
+            return [field_name]
+
+        return None
 
     def to_mongo(self, sample_collection):
         if self._pipeline is None:
@@ -6442,6 +6579,28 @@ class SelectLabels(ViewStage):
         """Whether to omit samples that have no labels after filtering."""
         return self._omit_empty
 
+    def get_edited_fields(self, sample_collection, frames=False):
+        if self._labels is not None:
+            fields = self._labels_map.keys()
+        elif self._fields is not None:
+            fields = self._fields
+        else:
+            fields = sample_collection._get_label_fields()
+
+        edited_fields = []
+
+        for field in fields:
+            field_name, is_frame_field = sample_collection._handle_frame_field(
+                field
+            )
+            if frames == is_frame_field:
+                edited_fields.append(field_name)
+
+        if edited_fields:
+            return edited_fields
+
+        return None
+
     def get_filtered_fields(self, sample_collection, frames=False):
         if self._labels is not None:
             fields = self._labels_map.keys()
@@ -7479,7 +7638,10 @@ class ToPatches(ViewStage):
         if state != last_state or not fod.dataset_exists(name):
             kwargs = self._config or {}
             patches_dataset = fop.make_patches_dataset(
-                sample_collection, self._field, **kwargs
+                sample_collection,
+                self._field,
+                _generated=True,
+                **kwargs,
             )
 
             # Other views may use the same generated dataset, so reuse the old
@@ -7623,7 +7785,10 @@ class ToEvaluationPatches(ViewStage):
         if state != last_state or not fod.dataset_exists(name):
             kwargs = self._config or {}
             eval_patches_dataset = fop.make_evaluation_patches_dataset(
-                sample_collection, self._eval_key, **kwargs
+                sample_collection,
+                self._eval_key,
+                _generated=True,
+                **kwargs,
             )
 
             # Other views may use the same generated dataset, so reuse the old
@@ -7780,7 +7945,10 @@ class ToClips(ViewStage):
         if state != last_state or not fod.dataset_exists(name):
             kwargs = self._config or {}
             clips_dataset = focl.make_clips_dataset(
-                sample_collection, self._field_or_expr, **kwargs
+                sample_collection,
+                self._field_or_expr,
+                _generated=True,
+                **kwargs,
             )
 
             # Other views may use the same generated dataset, so reuse the old
@@ -7914,7 +8082,11 @@ class ToTrajectories(ViewStage):
         if state != last_state or not fod.dataset_exists(name):
             kwargs = self._config or {}
             clips_dataset = focl.make_clips_dataset(
-                sample_collection, self._field, trajectories=True, **kwargs
+                sample_collection,
+                self._field,
+                trajectories=True,
+                _generated=True,
+                **kwargs,
             )
 
             state["name"] = clips_dataset.name
@@ -8098,7 +8270,9 @@ class ToFrames(ViewStage):
         if state != last_state or not fod.dataset_exists(name):
             kwargs = self._config or {}
             frames_dataset = fovi.make_frames_dataset(
-                sample_collection, **kwargs
+                sample_collection,
+                _generated=True,
+                **kwargs,
             )
 
             # Other views may use the same generated dataset, so reuse the old
@@ -8491,7 +8665,6 @@ _STAGES = [
     MatchLabels,
     MatchTags,
     Mongo,
-    Shuffle,
     Select,
     SelectBy,
     SelectFields,
@@ -8500,6 +8673,7 @@ _STAGES = [
     SelectGroupSlices,
     SelectLabels,
     SetField,
+    Shuffle,
     Skip,
     SortBy,
     SortBySimilarity,

@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<73f5c676c9c54c25dd5291458d73b758>>
+ * @generated SignedSource<<67543879e3e2987632bd17a53759bb4f>>
  * @lightSyntaxTransform
  * @nogrep
  */
@@ -9,18 +9,18 @@
 // @ts-nocheck
 
 import { Fragment, ReaderFragment } from 'relay-runtime';
-export type SidebarMode = "all" | "best" | "disabled" | "fast" | "%future added value";
 import { FragmentRefs } from "relay-runtime";
 export type datasetAppConfigFragment$data = {
   readonly colorScheme: {
     readonly " $fragmentSpreads": FragmentRefs<"colorSchemeFragment">;
   } | null;
+  readonly disableFrameFiltering: boolean | null;
+  readonly dynamicGroupsTargetFrameRate: number;
   readonly gridMediaField: string;
   readonly mediaFallback: boolean;
   readonly mediaFields: ReadonlyArray<string> | null;
   readonly modalMediaField: string;
   readonly plugins: object | null;
-  readonly sidebarMode: SidebarMode | null;
   readonly " $fragmentType": "datasetAppConfigFragment";
 };
 export type datasetAppConfigFragment$key = {
@@ -34,6 +34,36 @@ const node: ReaderFragment = {
   "metadata": null,
   "name": "datasetAppConfigFragment",
   "selections": [
+    {
+      "alias": null,
+      "args": null,
+      "concreteType": "ColorScheme",
+      "kind": "LinkedField",
+      "name": "colorScheme",
+      "plural": false,
+      "selections": [
+        {
+          "args": null,
+          "kind": "FragmentSpread",
+          "name": "colorSchemeFragment"
+        }
+      ],
+      "storageKey": null
+    },
+    {
+      "alias": null,
+      "args": null,
+      "kind": "ScalarField",
+      "name": "disableFrameFiltering",
+      "storageKey": null
+    },
+    {
+      "alias": null,
+      "args": null,
+      "kind": "ScalarField",
+      "name": "dynamicGroupsTargetFrameRate",
+      "storageKey": null
+    },
     {
       "alias": null,
       "args": null,
@@ -59,37 +89,14 @@ const node: ReaderFragment = {
       "alias": null,
       "args": null,
       "kind": "ScalarField",
-      "name": "plugins",
-      "storageKey": null
-    },
-    {
-      "alias": null,
-      "args": null,
-      "kind": "ScalarField",
-      "name": "sidebarMode",
-      "storageKey": null
-    },
-    {
-      "alias": null,
-      "args": null,
-      "concreteType": "ColorScheme",
-      "kind": "LinkedField",
-      "name": "colorScheme",
-      "plural": false,
-      "selections": [
-        {
-          "args": null,
-          "kind": "FragmentSpread",
-          "name": "colorSchemeFragment"
-        }
-      ],
-      "storageKey": null
-    },
-    {
-      "alias": null,
-      "args": null,
-      "kind": "ScalarField",
       "name": "mediaFallback",
+      "storageKey": null
+    },
+    {
+      "alias": null,
+      "args": null,
+      "kind": "ScalarField",
+      "name": "plugins",
       "storageKey": null
     }
   ],
@@ -97,6 +104,6 @@ const node: ReaderFragment = {
   "abstractKey": null
 };
 
-(node as any).hash = "6b71b3fc8c5a07b921938d7d0cf03272";
+(node as any).hash = "ee329c6ed9452236fb9ea680bea410e3";
 
 export default node;

@@ -1,7 +1,7 @@
 """
 Video frame views.
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
@@ -54,13 +54,12 @@ class FrameView(fos.SampleView):
         return ObjectId(self._doc.sample_id)
 
     def _save(self, deferred=False):
-        if deferred:
-            raise NotImplementedError(
-                "Frames views do not support save contexts"
-            )
+        sample_ops, frame_ops = super()._save(deferred=deferred)
 
-        super()._save(deferred=deferred)
-        self._view._sync_source_sample(self)
+        if not deferred:
+            self._view._sync_source_sample(self)
+
+        return sample_ops, frame_ops
 
 
 class FramesView(fov.DatasetView):
@@ -82,6 +81,15 @@ class FramesView(fov.DatasetView):
         frames_dataset: the :class:`fiftyone.core.dataset.Dataset` that serves
             the frames in this view
     """
+
+    __slots__ = (
+        "_source_collection",
+        "_frames_stage",
+        "_frames_dataset",
+        "__stages",
+        "__media_type",
+        "__name",
+    )
 
     def __init__(
         self,
@@ -173,6 +181,7 @@ class FramesView(fov.DatasetView):
                 include_private=include_private, use_db_fields=use_db_fields
             )
         )
+        sample_only_fields.discard("last_modified_at")
 
         # If sample_frames != dynamic, `filepath` can be synced
         config = self._frames_stage.config or {}
@@ -379,6 +388,7 @@ class FramesView(fov.DatasetView):
                 project["_id"] = True
                 project["_sample_id"] = True
                 project["frame_number"] = True
+                project["last_modified_at"] = True
                 pipeline.append({"$project": project})
 
             pipeline.append(
@@ -484,6 +494,8 @@ def make_frames_dataset(
     skip_failures=True,
     verbose=False,
     name=None,
+    persistent=False,
+    _generated=False,
 ):
     """Creates a dataset that contains one sample per frame in the video
     collection.
@@ -556,11 +568,6 @@ def make_frames_dataset(
         True, existing frames will not be resampled unless you set
         ``force_sample`` to True.
 
-    .. note::
-
-        The returned dataset is independent from the source collection;
-        modifying it will not affect the source collection.
-
     Args:
         sample_collection: a
             :class:`fiftyone.core.collections.SampleCollection`
@@ -609,6 +616,8 @@ def make_frames_dataset(
         verbose (False): whether to log information about the frames that will
             be sampled, if any
         name (None): a name for the dataset
+        persistent (False): whether the dataset should persist in the database
+            after the session terminates
 
     Returns:
         a :class:`fiftyone.core.dataset.Dataset`
@@ -632,12 +641,12 @@ def make_frames_dataset(
     # Create dataset with proper schema
     #
 
-    dataset = fod.Dataset(name=name, _frames=True)
+    dataset = fod.Dataset(name=name, persistent=persistent, _frames=_generated)
     dataset.media_type = fom.IMAGE
     dataset.add_sample_field("sample_id", fof.ObjectIdField)
 
     frame_schema = sample_collection.get_frame_field_schema()
-    dataset._sample_doc_cls.merge_field_schema(frame_schema)
+    dataset._sample_doc_cls.merge_field_schema(frame_schema, overwrite=True)
 
     dataset.create_index("sample_id")
 

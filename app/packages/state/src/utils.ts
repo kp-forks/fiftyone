@@ -1,12 +1,12 @@
 import { savedViewsFragment$key } from "@fiftyone/relay";
 import {
-  clone,
   Field,
-  getFetchFunction,
   GQLError,
   GraphQLError,
   Schema,
   StrictField,
+  clone,
+  getFetchFunction,
 } from "@fiftyone/utilities";
 import React, { MutableRefObject, useCallback, useRef } from "react";
 import {
@@ -18,7 +18,7 @@ import {
   RecordSource,
   Store,
 } from "relay-runtime";
-import { State } from "./recoil";
+import { ModalSample, State } from "./recoil";
 
 export const deferrer =
   (initialized: MutableRefObject<boolean>) =>
@@ -38,6 +38,9 @@ export const useDeferrer = () => {
 
   const init = useCallback(() => {
     initialized.current = true;
+    return () => {
+      initialized.current = false;
+    };
   }, []);
 
   return { init, deferred };
@@ -54,7 +57,7 @@ export const stringifyObj = (obj) => {
   );
 };
 
-export const filterView = (stages) =>
+export const filterView = (stages: State.Stage[]) =>
   JSON.stringify(
     stages.map(({ kwargs, _cls }) => ({
       kwargs: kwargs.filter((ka) => !ka[0].startsWith("_")),
@@ -62,7 +65,18 @@ export const filterView = (stages) =>
     }))
   );
 
-export const viewsAreEqual = (viewOne, viewTwo) => {
+export const viewsAreEqual = (
+  viewOne?: string | State.Stage[],
+  viewTwo?: string | State.Stage[]
+) => {
+  if (viewOne === viewTwo) {
+    return true;
+  }
+
+  if (!Array.isArray(viewOne) || !Array.isArray(viewTwo)) {
+    return false;
+  }
+
   return filterView(viewOne) === filterView(viewTwo);
 };
 
@@ -99,35 +113,34 @@ export const collapseFields = (paths): StrictField[] => {
 };
 
 export const getStandardizedUrls = (
-  urls: Array<{ field: string; url: string }> | { [field: string]: string }
+  urls:
+    | readonly { readonly field: string; readonly url: string }[]
+    | { [field: string]: string }
+    | ModalSample["urls"]
 ) => {
-  let standardizedUrls: { [field: string]: string } = {};
-  if (Array.isArray(urls)) {
-    for (const { field, url } of urls) {
-      standardizedUrls[field] = url;
-    }
-  } else {
-    standardizedUrls = urls;
+  if (!Array.isArray(urls)) {
+    return urls;
   }
-  return standardizedUrls;
+
+  return Object.fromEntries(urls.map(({ field, url }) => [field, url]));
 };
 
-const convertTargets = (
+export const convertTargets = (
   targets: {
     target: string;
     value: string;
   }[]
-) => {
+): { [key: string]: { label: string; intTarget: number } | string } => {
   return Object.fromEntries(
     (targets || []).map(({ target, value }, i) => {
-      if (!isNaN(Number(target))) {
+      if (!Number.isNaN(Number(target))) {
         // masks targets is for non-rgb masks
         return [target, value];
       }
 
       // convert into RGB mask representation
       // offset of 1 in intTarget because 0 has a special significance
-      return [target, { label: value, intTarget: i + 1 }];
+      return [target.toUpperCase(), { label: value, intTarget: i + 1 }];
     })
   );
 };
@@ -170,7 +183,7 @@ const fetchRelay: FetchFunction = async (
   params,
   variables
 ): Promise<GraphQLResponse> => {
-  const data = await await getFetchFunction()<unknown, GQLResponse>(
+  const data = await getFetchFunction()<unknown, GQLResponse>(
     "POST",
     "/graphql",
     {
@@ -193,7 +206,9 @@ const fetchRelay: FetchFunction = async (
 export const getEnvironment = () =>
   new Environment({
     network: Network.create(fetchRelay),
-    store: new Store(new RecordSource()),
+    store: new Store(new RecordSource(), {
+      gcReleaseBufferSize: 0,
+    }),
   });
 
 let currentEnvironment: Environment = getEnvironment();

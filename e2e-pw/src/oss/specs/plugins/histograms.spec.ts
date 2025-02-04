@@ -1,19 +1,24 @@
 import { test as base, expect } from "src/oss/fixtures";
 import { HistogramPom } from "src/oss/poms/panels/histogram-panel";
-import { PanelPom } from "src/oss/poms/panels/panel";
+import { GridPanelPom } from "src/oss/poms/panels/grid-panel";
 import { getUniqueDatasetNameWithPrefix } from "src/oss/utils";
 
 const datasetName = getUniqueDatasetNameWithPrefix(`histograms`);
-const test = base.extend<{ histogram: HistogramPom; panel: PanelPom }>({
+const test = base.extend<{ histogram: HistogramPom; panel: GridPanelPom }>({
   panel: async ({ page }, use) => {
-    await use(new PanelPom(page));
+    await use(new GridPanelPom(page));
   },
   histogram: async ({ page, eventUtils }, use) => {
     await use(new HistogramPom(page, eventUtils));
   },
 });
 
-test.beforeAll(async ({ fiftyoneLoader }) => {
+test.afterAll(async ({ foWebServer }) => {
+  await foWebServer.stopWebServer();
+});
+
+test.beforeAll(async ({ fiftyoneLoader, foWebServer }) => {
+  await foWebServer.startWebServer();
   await fiftyoneLoader.executePythonCode(`
     import fiftyone as fo
     dataset = fo.Dataset("${datasetName}")
@@ -52,15 +57,18 @@ test("histograms panel", async ({ histogram, panel }) => {
   await histogram.selector.openResults();
   await histogram.assert.verifyFields([
     "bool",
+    "created_at",
     "classification.confidence",
     "classification.label",
     "classification.tags",
     "detections.detections.confidence",
     "detections.detections.index",
     "detections.detections.label",
+    "detections.detections.mask_path",
     "detections.detections.tags",
     "float",
     "int",
+    "last_modified_at",
     "list_bool",
     "list_float",
     "list_int",
@@ -73,15 +81,13 @@ test("histograms panel", async ({ histogram, panel }) => {
     "str",
     "tags",
   ]);
-  await expect(await histogram.locator).toHaveScreenshot("bool-histogram.png", {
+  await expect(histogram.locator).toHaveScreenshot("bool-histogram.png", {
     animations: "allow",
   });
+  await histogram.selector.closeResults();
 
   await histogram.selectField("float");
-  await expect(await histogram.locator).toHaveScreenshot(
-    "float-histogram.png",
-    {
-      animations: "allow",
-    }
-  );
+  await expect(histogram.locator).toHaveScreenshot("float-histogram.png", {
+    animations: "allow",
+  });
 });

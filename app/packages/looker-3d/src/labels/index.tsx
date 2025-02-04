@@ -5,18 +5,18 @@ import {
 import * as fop from "@fiftyone/plugins";
 import * as fos from "@fiftyone/state";
 import { fieldSchema } from "@fiftyone/state";
+import { folder, useControls } from "leva";
 import { get as _get } from "lodash";
 import { useCallback, useMemo } from "react";
-import { useRecoilValue } from "recoil";
-import {
-  Looker3dPluginSettings,
-  defaultPluginSettings,
-} from "../Looker3dPlugin";
+import { useRecoilState, useRecoilValue } from "recoil";
+import { PANEL_ORDER_LABELS } from "../constants";
 import { usePathFilter } from "../hooks";
+import { type Looker3dSettings, defaultPluginSettings } from "../settings";
+import { cuboidLabelLineWidthAtom, polylineLabelLineWidthAtom } from "../state";
 import { toEulerFromDegreesArray } from "../utils";
-import { Cuboid, CuboidProps } from "./cuboid";
-import { OverlayLabel, load3dOverlays } from "./loader";
-import { PolyLineProps, Polyline } from "./polyline";
+import { Cuboid, type CuboidProps } from "./cuboid";
+import { type OverlayLabel, load3dOverlays } from "./loader";
+import { type PolyLineProps, Polyline } from "./polyline";
 
 export interface ThreeDLabelsProps {
   sampleMap: Record<string, any>;
@@ -27,16 +27,55 @@ export const ThreeDLabels = ({ sampleMap }: ThreeDLabelsProps) => {
   const { coloring, selectedLabelTags, customizeColorSetting, labelTagColors } =
     useRecoilValue(fos.lookerOptions({ withFilter: true, modal: true }));
 
-  const settings = fop.usePluginSettings<Looker3dPluginSettings>(
+  const settings = fop.usePluginSettings<Looker3dSettings>(
     "3d",
     defaultPluginSettings
   );
   const onSelectLabel = fos.useOnSelectLabel();
   const pathFilter = usePathFilter();
   const colorScheme = useRecoilValue(fos.colorScheme);
+  const [cuboidLineWidth, setCuboidLineWidth] = useRecoilState(
+    cuboidLabelLineWidthAtom
+  );
+  const [polylineWidth, setPolylineWidth] = useRecoilState(
+    polylineLabelLineWidthAtom
+  );
   const selectedLabels = useRecoilValue(fos.selectedLabelMap);
   const tooltip = fos.useTooltip();
   const labelAlpha = colorScheme.opacity;
+
+  const constLabelLevaControls = {
+    cuboidLineWidget: {
+      value: cuboidLineWidth,
+      min: 0,
+      max: 20,
+      step: 1,
+      label: `Cuboid Line Width`,
+      onChange: (value: number) => {
+        setCuboidLineWidth(value);
+      },
+    },
+    polylineLineWidget: {
+      value: polylineWidth,
+      min: 0,
+      max: 20,
+      step: 1,
+      label: `Polyline Line Width`,
+      onChange: (value: number) => {
+        setPolylineWidth(value);
+      },
+    },
+  };
+
+  const [labelConfig] = useControls(
+    () => ({
+      Labels: folder(constLabelLevaControls, {
+        order: PANEL_ORDER_LABELS,
+        collapsed: true,
+      }),
+    }),
+    [setCuboidLineWidth, setPolylineWidth]
+  );
 
   const handleSelect = useCallback(
     (label: OverlayLabel) => {
@@ -96,7 +135,11 @@ export const ThreeDLabels = ({ sampleMap }: ThreeDLabelsProps) => {
     const newPolylineOverlays = [];
 
     for (const overlay of rawOverlays) {
-      if (overlay._cls === "Detection") {
+      if (
+        overlay._cls === "Detection" &&
+        overlay.dimensions &&
+        overlay.location
+      ) {
         newCuboidOverlays.push(
           <Cuboid
             key={`cuboid-${overlay.id ?? overlay._id}-${overlay.sampleId}`}

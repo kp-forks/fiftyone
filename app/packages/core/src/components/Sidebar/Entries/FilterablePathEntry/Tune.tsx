@@ -1,8 +1,10 @@
 import { Tooltip, useTheme } from "@fiftyone/components";
 import { Tune } from "@mui/icons-material";
 import React from "react";
-import { RecoilState, useSetRecoilState } from "recoil";
-import AddIndex from "./AddIndex";
+import type { RecoilState } from "recoil";
+import { useSetRecoilState } from "recoil";
+import { QP_MODE } from "../../../../utils/links";
+import DisabledReason from "./DisabledReason";
 
 export default ({
   color,
@@ -51,7 +53,10 @@ export default ({
 
   if (disabled) {
     return (
-      <Tooltip text={<AddIndex />} placement="top-center">
+      <Tooltip
+        text={<DisabledReason href={QP_MODE} text={"add an index"} />}
+        placement="top-center"
+      >
         {children}
       </Tooltip>
     );

@@ -1,7 +1,7 @@
 """
 FiftyOne Server events dispatching.
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
@@ -23,6 +23,7 @@ from fiftyone.core.session.events import (
     SelectSamples,
     SetColorScheme,
     SetGroupSlice,
+    SetSample,
     SetSpaces,
     StateUpdate,
     SetFieldVisibilityStage,
@@ -39,11 +40,14 @@ async def dispatch_event(
     Args:
         subscription: the calling subscription id
         event: the event
+
+    Returns:
+        the dispatched event
     """
     state = get_state()
     if isinstance(event, CaptureNotebookCell) and focx.is_databricks_context():
         add_screenshot(event)
-        return
+        return event
 
     if isinstance(event, SelectLabels):
         state.selected_labels = event.labels
@@ -56,6 +60,10 @@ async def dispatch_event(
             asdict(event.color_scheme)
         )
 
+    if isinstance(event, SetSample):
+        state.group_id = event.group_id
+        state.sample_id = event.sample_id
+
     if isinstance(event, SetSpaces):
         state.spaces = foo.Space.from_dict(event.spaces)
 
@@ -63,7 +71,7 @@ async def dispatch_event(
         state.field_visibility_stage = event.stage
 
     if isinstance(event, SetGroupSlice):
-        state.group_slice = event.slice
+        state.group_slice = event.slice or state.dataset.default_group_slice
 
     if isinstance(event, (StateUpdate, Refresh)):
         set_state(event.state)
@@ -76,3 +84,5 @@ async def dispatch_event(
             continue
 
         listener.queue.put_nowait((datetime.now(), event))
+
+    return event

@@ -1,14 +1,9 @@
-import { Bar } from "@fiftyone/components";
-import * as foq from "@fiftyone/relay";
 import * as fos from "@fiftyone/state";
-import React, { useEffect, useRef } from "react";
-import { PreloadedQuery } from "react-relay";
+import React, { useEffect } from "react";
 import { useRecoilState, useRecoilValue } from "recoil";
 import styled from "styled-components";
-import { ModalActionsRow } from "../../../../Actions";
-import Sample from "../../../Sample";
+import { Sample2D } from "../../../Sample2D";
 import { Sample3d } from "../../../Sample3d";
-import { useGroupContext } from "../../GroupContextProvider";
 import { GroupSuspense } from "../../GroupSuspense";
 import { DynamicGroupCarousel } from ".././carousel/DynamicGroupCarousel";
 import { GroupElementsLinkBar } from "../pagination";
@@ -26,19 +21,11 @@ const ElementsContainer = styled.div`
   justify-content: center;
 `;
 
-export const NonNestedDynamicGroup = ({
-  queryRef,
-}: {
-  queryRef: PreloadedQuery<foq.paginateSamplesQuery> | null;
-}) => {
-  const { lookerRefCallback } = useGroupContext();
-  const lookerRef = useRef<fos.Lookers>();
-  const groupByFieldValue = useRecoilValue(fos.groupByFieldValue);
-
+export const NonNestedDynamicGroup = () => {
   const [isBigLookerVisible, setIsBigLookerVisible] = useRecoilState(
     fos.groupMediaIsMainVisibleSetting
   );
-  const viewMode = useRecoilValue(fos.dynamicGroupsViewMode);
+  const viewMode = useRecoilValue(fos.dynamicGroupsViewMode(true));
   const isCarouselVisible = useRecoilValue(
     fos.groupMediaIsCarouselVisibleSetting
   );
@@ -48,66 +35,27 @@ export const NonNestedDynamicGroup = ({
     if (!isBigLookerVisible && viewMode !== "carousel") {
       setIsBigLookerVisible(true);
     }
-  }, [isBigLookerVisible, viewMode]);
-
-  if (!groupByFieldValue) {
-    return null;
-  }
-
-  if (viewMode !== "video" && !queryRef) {
-    throw new Error("no queryRef provided");
-  }
+  }, [isBigLookerVisible, viewMode, setIsBigLookerVisible]);
 
   return (
     <RootContainer>
-      {/* weird conditional rendering of the bar because lookerControls messes up positioning of the bar in firefox in inexplicable ways */}
-      {!isBigLookerVisible && (
-        <NonNestedDynamicGroupBar lookerRef={lookerRef} />
-      )}
       <ElementsContainer>
         <>
-          {isBigLookerVisible && (
-            <NonNestedDynamicGroupBar lookerRef={lookerRef} />
-          )}
           {isCarouselVisible && viewMode === "carousel" && (
-            <DynamicGroupCarousel key={groupByFieldValue} />
+            <DynamicGroupCarousel />
           )}
           {isBigLookerVisible && (
             <GroupSuspense>
               {parent !== "point_cloud" && parent !== "three_d" ? (
-                <Sample
-                  lookerRefCallback={lookerRefCallback}
-                  lookerRef={lookerRef}
-                />
+                <Sample2D />
               ) : (
                 <Sample3d />
               )}
             </GroupSuspense>
           )}
         </>
-        {viewMode === "pagination" && queryRef && (
-          <GroupElementsLinkBar queryRef={queryRef} />
-        )}
+        {viewMode === "pagination" && <GroupElementsLinkBar />}
       </ElementsContainer>
     </RootContainer>
-  );
-};
-
-const NonNestedDynamicGroupBar = ({
-  lookerRef,
-}: {
-  lookerRef: React.MutableRefObject<fos.Lookers | undefined>;
-}) => {
-  return (
-    <Bar
-      style={{
-        position: "relative",
-        display: "flex",
-        justifyContent: "right",
-        zIndex: 10000,
-      }}
-    >
-      <ModalActionsRow isGroup lookerRef={lookerRef} />
-    </Bar>
   );
 };

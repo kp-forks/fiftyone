@@ -1,10 +1,11 @@
 """
 Plugin definitions.
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
+import hashlib
 import os
 
 import yaml
@@ -12,6 +13,7 @@ import yaml
 import eta.core.serial as etas
 
 import fiftyone as fo
+import fiftyone.plugins.constants as fpc
 
 
 class PluginDefinition(object):
@@ -20,13 +22,16 @@ class PluginDefinition(object):
     Args:
         directory: the directory containing the plugin
         metadata: a plugin metadata dict
+        shadow_paths (None): a list of plugin directories that this plugin
+            shadows
     """
 
     _REQUIRED_METADATA_KEYS = ["name"]
 
-    def __init__(self, directory, metadata):
+    def __init__(self, directory, metadata, shadow_paths=None):
         self._directory = directory
         self._metadata = metadata
+        self._shadow_paths = shadow_paths
         self._validate()
 
     @property
@@ -38,6 +43,16 @@ class PluginDefinition(object):
     def directory(self):
         """The directory containing the plugin."""
         return self._directory
+
+    @property
+    def builtin(self):
+        """Whether the plugin is a builtin plugin."""
+        return self.directory.startswith(fpc.BUILTIN_PLUGINS_DIR)
+
+    @property
+    def shadow_paths(self):
+        """A list of plugin directories that this plugin shadows."""
+        return self._shadow_paths
 
     @property
     def author(self):
@@ -86,7 +101,9 @@ class PluginDefinition(object):
     @property
     def operators(self):
         """The operators of the plugin."""
-        return self._metadata.get("operators", [])
+        return self._metadata.get("operators", []) + self._metadata.get(
+            "panels", []
+        )
 
     @property
     def package_json_path(self):
@@ -137,6 +154,20 @@ class PluginDefinition(object):
         if self.has_js:
             return os.path.join(self.server_path, self.js_bundle)
 
+    @property
+    def js_bundle_hash(self):
+        """A hash of the plugin's JS bundle file."""
+        if not self.has_js:
+            return None
+
+        try:
+            with open(self.js_bundle_path, "rb") as f:
+                h = hashlib.sha1()
+                h.update(f.read())
+                return h.hexdigest()
+        except:
+            return None
+
     def can_register_operator(self, name):
         """Whether the plugin can register the given operator.
 
@@ -171,29 +202,35 @@ class PluginDefinition(object):
         """
         return {
             "name": self.name,
+            "builtin": self.builtin,
             "author": self.author,
             "version": self.version,
             "url": self.url,
             "license": self.license,
             "description": self.description,
             "fiftyone_compatibility": self.fiftyone_compatibility,
-            "operators": self.operators,
+            "operators": self._metadata.get("operators", []),
+            "panels": self._metadata.get("panels", []),
             "js_bundle": self.js_bundle,
             "py_entry": self.py_entry,
             "js_bundle_exists": self.has_js,
             "js_bundle_server_path": self.js_bundle_server_path,
+            "js_bundle_hash": self.js_bundle_hash,
             "has_py": self.has_py,
             "has_js": self.has_js,
             "server_path": self.server_path,
             "secrets": self.secrets,
+            "shadow_paths": self.shadow_paths,
         }
 
     @classmethod
-    def from_disk(cls, metadata_path):
+    def from_disk(cls, metadata_path, shadow_paths=None):
         """Creates a :class:`PluginDefinition` for the given metadata file.
 
         Args:
             metadata_path: the path to a plugin ``.yaml`` file
+            shadow_paths (None): a list of plugin directories that this plugin
+                shadows
 
         Returns:
             a :class:`PluginDefinition`
@@ -202,7 +239,7 @@ class PluginDefinition(object):
         with open(metadata_path, "r") as f:
             metadata = yaml.safe_load(f)
 
-        return cls(dirpath, metadata)
+        return cls(dirpath, metadata, shadow_paths=shadow_paths)
 
     def _validate(self):
         missing = [

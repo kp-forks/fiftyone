@@ -1,22 +1,27 @@
 import * as foq from "@fiftyone/relay";
+import { BufferManager } from "@fiftyone/utilities";
 import { Environment, Subscription, fetchQuery } from "relay-runtime";
 import { BufferRange, ImaVidState, StateUpdate } from "../../state";
-import { BufferManager } from "./buffer-manager";
-import { BUFFERS_REFRESH_TIMEOUT_YIELD, DEFAULT_FRAME_RATE } from "./constants";
-import { ImaVidFrameSamples } from "./ima-vid-frame-samples";
+import { BUFFERS_REFRESH_TIMEOUT_YIELD } from "./constants";
+import {
+  ImaVidFrameSamples,
+  ModalSampleExtendedWithImage,
+} from "./ima-vid-frame-samples";
 import { ImaVidStore } from "./store";
 
 const BUFFER_METADATA_FETCHING = "fetching";
 
 export class ImaVidFramesController {
-  public fetchBufferManager = new BufferManager();
-  private frameRate = DEFAULT_FRAME_RATE;
-
-  public totalFrameCount: number;
+  private mediaField = "filepath";
+  private subscription: Subscription;
+  private targetFrameRate: number;
   private timeoutId: number;
+
+  public fetchBufferManager = new BufferManager();
   public isFetching = false;
   public storeBufferManager: BufferManager;
-  private subscription: Subscription;
+  public totalFrameCount: number;
+
   private updateImaVidState: StateUpdate<ImaVidState>;
 
   constructor(
@@ -27,6 +32,7 @@ export class ImaVidFramesController {
       page: any;
       key: string;
       totalFrameCountPromise: Promise<number>;
+      targetFrameRate: number;
     }
   ) {
     this.storeBufferManager = new BufferManager([
@@ -35,6 +41,7 @@ export class ImaVidFramesController {
     config.totalFrameCountPromise.then((frameCount) => {
       this.totalFrameCount = frameCount;
     });
+    this.targetFrameRate = config.targetFrameRate;
   }
 
   public setImaVidStateUpdater(updater: StateUpdate<ImaVidState>) {
@@ -118,8 +125,8 @@ export class ImaVidFramesController {
         BUFFER_METADATA_FETCHING
       );
 
-      // subtract by two because 1) cursor is one based and 2) cursor here translates to "after" the cursor
-      return this.fetchMore(range[0] - 2, range[1] - range[0] || 1).finally(
+      // subtract/add by two because 1) cursor is one based and 2) cursor here translates to "after" the cursor
+      return this.fetchMore(range[0] - 2, range[1] - range[0] + 2).finally(
         () => {
           this.fetchBufferManager.removeMetadataFromBufferRange(index);
         }
@@ -145,7 +152,11 @@ export class ImaVidFramesController {
   }
 
   public get currentFrameRate() {
-    return this.frameRate;
+    return this.targetFrameRate;
+  }
+
+  public get isStoreBufferManagerEmpty() {
+    return this.storeBufferManager.totalFramesInBuffer === 0;
   }
 
   private get environment() {
@@ -156,7 +167,7 @@ export class ImaVidFramesController {
     return this.config.page;
   }
 
-  private get key() {
+  public get key() {
     return this.config.key;
   }
 
@@ -172,15 +183,19 @@ export class ImaVidFramesController {
   }
 
   public setFrameRate(newFrameRate: number) {
-    if (newFrameRate > 24) {
-      throw new Error("max frame rate is 24");
+    if (newFrameRate > 60) {
+      throw new Error("max frame rate is 60");
     }
 
     if (newFrameRate < 1) {
       throw new Error("min frame rate is 1");
     }
 
-    this.frameRate = newFrameRate;
+    this.targetFrameRate = newFrameRate;
+  }
+
+  public setMediaField(mediaField: string) {
+    this.mediaField = mediaField;
   }
 
   public async fetchMore(cursor: number, count: number) {
@@ -203,33 +218,77 @@ export class ImaVidFramesController {
       ).subscribe({
         next: (data) => {
           if (data?.samples?.edges?.length) {
+            // map of frame index to sample id resolved by image fetching promise
+            // (insertion order preserved)
+            const imageFetchPromisesMap: Map<
+              number,
+              Promise<string>
+            > = new Map();
+
             // update store
             for (const { cursor, node } of data.samples.edges) {
               if (!node) {
                 continue;
               }
 
-              if (node.__typename !== "ImageSample") {
+              const sample = {
+                ...node,
+                image: null,
+              } as ModalSampleExtendedWithImage;
+              const sampleId = sample.sample["_id"] as string;
+
+              if (sample.__typename !== "ImageSample") {
                 throw new Error("only image samples supported");
               }
 
-              const nodeSampleId = node.sample["_id"] as string;
+              // offset by one because cursor is zero based and frame index is one based
+              const frameIndex = Number(cursor) + 1;
 
-              this.store.samples.set(node.sample["_id"], node);
-              this.store.frameIndex.set(Number(cursor) + 1, nodeSampleId);
-              this.store.reverseFrameIndex.set(
-                nodeSampleId,
-                Number(cursor) + 1
+              this.store.samples.set(sampleId, sample);
+
+              imageFetchPromisesMap.set(
+                frameIndex,
+                this.store.fetchImageForSample(
+                  sampleId,
+                  sample["urls"],
+                  this.mediaField
+                )
               );
             }
 
-            this.storeBufferManager.addNewRange([
-              Number(data.samples.edges[0].cursor) + 1,
-              Number(data.samples.edges[data.samples.edges.length - 1].cursor) +
-                1,
-            ]);
+            const frameIndices = imageFetchPromisesMap.keys();
+            const imageFetchPromises = imageFetchPromisesMap.values();
+
+            Promise.all(imageFetchPromises)
+              .then((sampleIds) => {
+                for (let i = 0; i < sampleIds.length; i++) {
+                  const frameIndex = frameIndices.next().value;
+                  const sampleId = sampleIds[i];
+                  this.store.frameIndex.set(frameIndex, sampleId);
+                  this.store.reverseFrameIndex.set(sampleId, frameIndex);
+                }
+                resolve();
+              })
+              .then(() => {
+                const newRange = [
+                  Number(data.samples.edges[0].cursor) + 1,
+                  Number(
+                    data.samples.edges[data.samples.edges.length - 1].cursor
+                  ) + 1,
+                ] as BufferRange;
+
+                this.storeBufferManager.addNewRange(newRange);
+
+                window.dispatchEvent(
+                  new CustomEvent("fetchMore", {
+                    detail: {
+                      id: this.key,
+                    },
+                    bubbles: false,
+                  })
+                );
+              });
           }
-          resolve();
         },
       });
       // todo: see if environment.retain() is applicable here,

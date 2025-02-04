@@ -1,7 +1,7 @@
 """
 PyTorch utilities.
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
@@ -374,6 +374,9 @@ class TorchImageModelConfig(foc.Config):
             function to apply
         transforms_args (None): a dictionary of arguments for
             ``transforms_args``
+        ragged_batches (None): whether the provided ``transforms`` or
+            ``transforms_fcn`` may return tensors of different sizes. This must
+            be set to ``False`` to enable batch inference, if it is desired
         raw_inputs (None): whether to feed the raw list of images to the model
             rather than stacking them as a Torch tensor
         output_processor (None): an :class:`OutputProcessor` instance to use
@@ -444,6 +447,9 @@ class TorchImageModelConfig(foc.Config):
         self.transforms_fcn = self.parse_raw(d, "transforms_fcn", default=None)
         self.transforms_args = self.parse_dict(
             d, "transforms_args", default=None
+        )
+        self.ragged_batches = self.parse_bool(
+            d, "ragged_batches", default=None
         )
         self.raw_inputs = self.parse_bool(d, "raw_inputs", default=None)
         self.output_processor = self.parse_raw(
@@ -567,8 +573,9 @@ class TorchImageModel(
             torch.backends.cudnn.benchmark = self._benchmark_orig
             self._benchmark_orig = None
 
-        self._no_grad.__exit__(*args)
-        self._no_grad = None
+        if self._no_grad is not None:
+            self._no_grad.__exit__(*args)
+            self._no_grad = None
 
     @property
     def media_type(self):
@@ -789,7 +796,10 @@ class TorchImageModel(
         return model
 
     def _build_transforms(self, config):
-        ragged_batches = True
+        if config.ragged_batches is not None:
+            ragged_batches = config.ragged_batches
+        else:
+            ragged_batches = True
 
         if config.transforms is not None:
             return config.transforms, ragged_batches
@@ -1754,8 +1764,8 @@ class TorchImagePatchesDataset(Dataset):
             before extracting them, in ``[-1, inf)``. If provided, the length
             and width of the box are expanded (or contracted, when
             ``alpha < 0``) by ``(100 * alpha)%``. For example, set
-            ``alpha = 1.1`` to expand the boxes by 10%, and set ``alpha = 0.9``
-            to contract the boxes by 10%
+            ``alpha = 0.1`` to expand the boxes by 10%, and set
+            ``alpha = -0.1`` to contract the boxes by 10%
         skip_failures (False): whether to return an ``Exception`` object rather
             than raising it if an error occurs while loading a sample
     """

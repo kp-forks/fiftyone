@@ -1,5 +1,5 @@
 import { folder, useControls } from "leva";
-import { OnChangeHandler } from "leva/plugin";
+import type { OnChangeHandler } from "leva/plugin";
 import { useCallback, useState } from "react";
 import {
   PANEL_ORDER_PCD_CONTROLS,
@@ -9,7 +9,7 @@ import {
   SHADE_BY_NONE,
   SHADE_BY_RGB,
 } from "../constants";
-import { FoPointcloudMaterialProps } from "./use-fo3d";
+import type { FoPointcloudMaterialProps } from "./use-fo3d";
 
 export const usePcdMaterialControls = (
   name: string,
@@ -34,7 +34,8 @@ export const usePcdMaterialControls = (
           pointSize: {
             value: pointSize ?? 1,
             min: 0.01,
-            max: 20,
+            // max point size is arbitrary. ideally, we should also offer a text box for users to input their desired point size
+            max: 50,
             step: 0.01,
             onChange: onChangeTextBox,
             label: "Points Size",

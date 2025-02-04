@@ -1,5 +1,5 @@
 /**
- * Copyright 2017-2024, Voxel51, Inc.
+ * Copyright 2017-2025, Voxel51, Inc.
  */
 import {
   Close as CloseIcon,
@@ -76,8 +76,8 @@ export default function JSONPanel(props: JSONPanelPropsType) {
 }
 
 type JSONPanelPropsType = {
-  containerRef: React.RefObject<HTMLDivElement>;
+  containerRef: React.RefObject<HTMLDivElement | undefined>;
   onClose: () => void;
   onCopy: () => void;
-  json: string;
+  json: string | null;
 };

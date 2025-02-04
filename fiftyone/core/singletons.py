@@ -1,10 +1,11 @@
 """
 FiftyOne singleton implementations.
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
+
 from collections import defaultdict
 import weakref
 
@@ -37,7 +38,9 @@ class DatasetSingleton(type):
             name = instance.name  # `__init__` may have changed `name`
         else:
             try:
-                instance._update_last_loaded_at()
+                instance._update_last_loaded_at(
+                    force=kwargs.get("_force_load", False)
+                )
             except ValueError:
                 instance._deleted = True
                 return cls.__call__(

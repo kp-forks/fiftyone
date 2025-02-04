@@ -44,6 +44,7 @@ import {
 } from "../util";
 import { ProcessSample } from "../worker";
 import { LookerUtils } from "./shared";
+import { retrieveArrayBuffers } from "./utils";
 
 const LABEL_LISTS_PATH = new Set(withPath(LABELS_PATH, LABEL_LISTS));
 const LABEL_LIST_KEY = Object.fromEntries(
@@ -60,11 +61,11 @@ const getLabelsWorker = (() => {
   let workers: Worker[];
 
   let next = -1;
-  return (dispatchEvent) => {
+  return () => {
     if (!workers) {
       workers = [];
       for (let i = 0; i < numWorkers; i++) {
-        workers.push(createWorker(LookerUtils.workerCallbacks, dispatchEvent));
+        workers.push(createWorker(LookerUtils.workerCallbacks));
       }
     }
 
@@ -91,6 +92,7 @@ export abstract class AbstractLooker<
   private previousState?: Readonly<State>;
   private readonly rootEvents: Events<State>;
 
+  protected readonly abortController: AbortController;
   protected sampleOverlays: Overlay<State>[];
   protected currentOverlays: Overlay<State>[];
   protected pluckedOverlays: Overlay<State>[];
@@ -107,10 +109,12 @@ export abstract class AbstractLooker<
     config: State["config"],
     options: Partial<State["options"]> = {}
   ) {
+    this.abortController = new AbortController();
     this.eventTarget = new EventTarget();
     this.subscriptions = {};
     this.updater = this.makeUpdate();
     this.state = this.getInitialState(config, options);
+
     this.loadSample(sample);
     this.state.options.mimetype = getMimeType(sample);
     this.pluckedOverlays = [];
@@ -218,8 +222,9 @@ export abstract class AbstractLooker<
       if (eventType === "selectthumbnail") {
         this.dispatchEvent(eventType, {
           shiftKey: detail,
-          sampleId: this.sample.id,
+          id: this.sample.id,
           sample: this.sample,
+          symbol: this.state.config.symbol,
         });
         return;
       }
@@ -310,7 +315,7 @@ export abstract class AbstractLooker<
           Boolean(this.currentOverlays.length) &&
           this.currentOverlays[0].containsPoint(this.state) > CONTAINS.NONE;
 
-        postUpdate && postUpdate(this.state, this.currentOverlays, this.sample);
+        postUpdate?.(this.state, this.currentOverlays, this.sample);
 
         this.dispatchImpliedEvents(this.previousState, this.state);
 
@@ -322,7 +327,9 @@ export abstract class AbstractLooker<
         }
 
         ctx.lineWidth = this.state.strokeWidth;
-        ctx.font = `bold ${this.state.fontSize.toFixed(2)}px Palanquin`;
+        if (!this.state.config.thumbnail) {
+          ctx.font = `bold ${this.state.fontSize.toFixed(2)}px Palanquin`;
+        }
         ctx.textAlign = "left";
         ctx.textBaseline = "bottom";
         ctx.imageSmoothingEnabled = false;
@@ -382,9 +389,19 @@ export abstract class AbstractLooker<
   addEventListener(
     eventType: string,
     handler: EventListenerOrEventListenerObject | null,
-    ...args: any[]
+    optionsOrUseCapture?: boolean | AddEventListenerOptions
   ) {
-    this.eventTarget.addEventListener(eventType, handler, ...args);
+    const argsWithSignal: AddEventListenerOptions =
+      typeof optionsOrUseCapture === "boolean"
+        ? {
+            signal: this.abortController?.signal,
+            capture: optionsOrUseCapture,
+          }
+        : {
+            ...(optionsOrUseCapture ?? {}),
+            signal: this.abortController?.signal,
+          };
+    this.eventTarget.addEventListener(eventType, handler, argsWithSignal);
   }
 
   removeEventListener(
@@ -445,32 +462,37 @@ export abstract class AbstractLooker<
     };
   }
 
-  attach(element: HTMLElement | string, dimensions?: Dimensions): void {
+  /**
+   * Attaches the instance to the provided HTMLElement and adds event listeners
+   */
+  attach(
+    element: HTMLElement | string,
+    dimensions?: Dimensions,
+    fontSize?: number
+  ): void {
     if (typeof element === "string") {
       element = document.getElementById(element);
     }
 
     if (element === this.lookerElement.element.parentElement) {
-      this.state.disabled && this.updater({ disabled: false });
+      this.state.disabled &&
+        this.updater({ disabled: false, options: { fontSize } });
       return;
     }
 
     if (this.lookerElement.element.parentElement) {
-      const parent = this.lookerElement.element.parentElement;
-      this.resizeObserver.disconnect();
-      parent.removeChild(this.lookerElement.element);
-
-      for (const eventType in this.rootEvents) {
-        parent.removeEventListener(eventType, this.rootEvents[eventType]);
-      }
+      console.warn("instance is already attached");
     }
 
     for (const eventType in this.rootEvents) {
-      element.addEventListener(eventType, this.rootEvents[eventType]);
+      element.addEventListener(eventType, this.rootEvents[eventType], {
+        signal: this.abortController.signal,
+      });
     }
     this.updater({
       windowBBox: dimensions ? [0, 0, ...dimensions] : getElementBBox(element),
       disabled: false,
+      options: { fontSize },
     });
     element.appendChild(this.lookerElement.element);
     !dimensions && this.resizeObserver.observe(element);
@@ -482,18 +504,20 @@ export abstract class AbstractLooker<
     });
   }
 
+  /**
+   * Detaches the instance from the DOM
+   */
   detach(): void {
     this.resizeObserver.disconnect();
-    this.lookerElement.element.parentNode &&
-      this.lookerElement.element.parentNode.removeChild(
-        this.lookerElement.element
-      );
+    this.lookerElement.element.parentNode?.removeChild(
+      this.lookerElement.element
+    );
   }
 
   abstract updateOptions(options: Partial<State["options"]>): void;
 
   updateSample(sample: Sample) {
-    this.loadSample(sample);
+    this.loadSample(sample, retrieveArrayBuffers(this.sampleOverlays));
   }
 
   getSample(): Promise<Sample> {
@@ -511,20 +535,20 @@ export abstract class AbstractLooker<
 
   getCurrentSampleLabels(): LabelData[] {
     const labels: LabelData[] = [];
-    this.currentOverlays.forEach((overlay) => {
+    for (const overlay of this.currentOverlays) {
       if (overlay instanceof ClassificationsOverlay) {
-        overlay.getFilteredAndFlat(this.state).forEach(([field, label]) => {
+        for (const [field, label] of overlay.getFilteredAndFlat(this.state)) {
           labels.push({
             field: field,
             labelId: label.id,
             sampleId: this.sample.id,
           });
-        });
+        }
       } else {
         const { id: labelId, field } = overlay.getSelectData(this.state);
         labels.push({ labelId, field, sampleId: this.sample.id });
       }
-    });
+    }
 
     return labels;
   }
@@ -533,14 +557,20 @@ export abstract class AbstractLooker<
     return false;
   }
 
+  /**
+   * Detaches the instance from the DOM and aborts all associated event
+   * listeners
+   *
+   * This method must be called to avoid memory leaks associated with detached
+   * elements
+   */
   destroy() {
-    this.resizeObserver.disconnect();
-    this.lookerElement.element.parentElement &&
-      this.lookerElement.element.parentElement.removeChild(
-        this.lookerElement.element
-      );
+    this.detach();
+    this.abortController.abort();
     this.updater({ destroyed: true });
+    this.sampleOverlays?.forEach((overlay) => overlay.cleanup?.());
   }
+
   disable() {
     this.updater({ disabled: true });
   }
@@ -671,13 +701,22 @@ export abstract class AbstractLooker<
     );
   }
 
-  private loadSample(sample: Sample) {
+  protected cleanOverlays() {
+    for (const overlay of this.sampleOverlays ?? []) {
+      overlay.cleanup?.();
+    }
+  }
+
+  private loadSample(sample: Sample, transfer: Transferable[] = []) {
     const messageUUID = uuid();
-    const labelsWorker = getLabelsWorker((event, detail) =>
-      this.dispatchEvent(event, detail)
-    );
+
+    const labelsWorker = getLabelsWorker();
+
     const listener = ({ data: { sample, coloring, uuid } }) => {
       if (uuid === messageUUID) {
+        // we paint overlays again, so cleanup the old ones
+        // this helps prevent memory leaks from, for instance, dangling ImageBitmaps
+        this.cleanOverlays();
         this.sample = sample;
         this.state.options.coloring = coloring;
         this.loadOverlays(sample);
@@ -689,9 +728,10 @@ export abstract class AbstractLooker<
         labelsWorker.removeEventListener("message", listener);
       }
     };
+
     labelsWorker.addEventListener("message", listener);
 
-    labelsWorker.postMessage({
+    const workerArgs = {
       sample: sample as ProcessSample["sample"],
       method: "processSample",
       coloring: this.state.options.coloring,
@@ -702,7 +742,20 @@ export abstract class AbstractLooker<
       sources: this.state.config.sources,
       schema: this.state.config.fieldSchema,
       uuid: messageUUID,
-    } as ProcessSample);
+    } as ProcessSample;
+
+    try {
+      labelsWorker.postMessage(workerArgs, transfer);
+    } catch (error) {
+      // rarely we'll get a DataCloneError
+      // if one of the buffers is detached and we didn't catch it
+      // try again without transferring the buffers (copying them)
+      if (error.name === "DataCloneError") {
+        labelsWorker.postMessage(workerArgs);
+      } else {
+        throw error;
+      }
+    }
   }
 }
 

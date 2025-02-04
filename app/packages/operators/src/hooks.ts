@@ -1,29 +1,22 @@
 import { pluginsLoaderAtom } from "@fiftyone/plugins";
 import * as fos from "@fiftyone/state";
 import { debounce, isEqual } from "lodash";
-import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  useRecoilValue,
-  useRecoilValueLoadable,
-  useSetRecoilState,
-} from "recoil";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRecoilValue, useSetRecoilState, useRecoilState } from "recoil";
 import { RESOLVE_PLACEMENTS_TTL } from "./constants";
 import {
   ExecutionContext,
   fetchRemotePlacements,
+  listLocalAndRemoteOperators,
   resolveLocalPlacements,
 } from "./operators";
 import {
+  activePanelsEventCountAtom,
   operatorPlacementsAtom,
   operatorThrottledContext,
   operatorsInitializedAtom,
+  useCurrentSample,
 } from "./state";
-
-function useCurrentSample() {
-  // 'currentSampleId' may suspend for group datasets, so we use a loadable
-  const currentSample = useRecoilValueLoadable(fos.currentSampleId);
-  return currentSample.state === "hasValue" ? currentSample.contents : null;
-}
 
 function useOperatorThrottledContextSetter() {
   const datasetName = useRecoilValue(fos.datasetName);
@@ -33,8 +26,11 @@ function useOperatorThrottledContextSetter() {
   const filters = useRecoilValue(fos.filters);
   const selectedSamples = useRecoilValue(fos.selectedSamples);
   const selectedLabels = useRecoilValue(fos.selectedLabels);
+  const groupSlice = useRecoilValue(fos.groupSlice);
   const currentSample = useCurrentSample();
   const setContext = useSetRecoilState(operatorThrottledContext);
+  const spaces = useRecoilValue(fos.sessionSpaces);
+  const workspaceName = spaces._name;
   const setThrottledContext = useMemo(() => {
     return debounce(
       (context) => {
@@ -55,6 +51,9 @@ function useOperatorThrottledContextSetter() {
       selectedLabels,
       currentSample,
       viewName,
+      groupSlice,
+      spaces,
+      workspaceName,
     });
   }, [
     setThrottledContext,
@@ -66,6 +65,9 @@ function useOperatorThrottledContextSetter() {
     selectedLabels,
     currentSample,
     viewName,
+    groupSlice,
+    spaces,
+    workspaceName,
   ]);
 }
 
@@ -111,4 +113,51 @@ export function useOperatorPlacementsResolver() {
   ]);
 
   return { resolving, initialized };
+}
+
+export function useActivePanelEventsCount(id: string) {
+  const [activePanelEventsCount, setActivePanelEventsCount] = useRecoilState(
+    activePanelsEventCountAtom
+  );
+  const count = useMemo(() => {
+    return activePanelEventsCount.get(id) || 0;
+  }, [activePanelEventsCount, id]);
+
+  const increment = useCallback(
+    (panelId?: string) => {
+      const computedId = panelId ?? id;
+      setActivePanelEventsCount((counts) => {
+        const updatedCount = (counts.get(computedId) || 0) + 1;
+        return new Map(counts).set(computedId, updatedCount);
+      });
+    },
+    [id, setActivePanelEventsCount]
+  );
+
+  const decrement = useCallback(
+    (panelId?: string) => {
+      const computedId = panelId ?? id;
+      setActivePanelEventsCount((counts) => {
+        const updatedCount = (counts.get(computedId) || 0) - 1;
+        if (updatedCount < 0) {
+          return counts;
+        }
+        return new Map(counts).set(computedId, updatedCount);
+      });
+    },
+    [id, setActivePanelEventsCount]
+  );
+
+  return { count, increment, decrement };
+}
+
+export function useFirstExistingUri(uris: string[]) {
+  const availableOperators = useMemo(() => listLocalAndRemoteOperators(), []);
+  return useMemo(() => {
+    const existingUri = uris.find((uri) =>
+      availableOperators.allOperators.some((op) => op.uri === uri)
+    );
+    const exists = Boolean(existingUri);
+    return { firstExistingUri: existingUri, exists };
+  }, [availableOperators, uris]);
 }

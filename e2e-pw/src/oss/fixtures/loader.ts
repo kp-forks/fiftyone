@@ -1,90 +1,16 @@
 import { Page } from "@playwright/test";
-import { spawn } from "child_process";
 import { getPythonCommand, getStringifiedKwargs } from "src/oss/utils/commands";
 import {
   AbstractFiftyoneLoader,
   WaitUntilGridVisibleOptions,
 } from "src/shared/abstract-loader";
 import { PythonRunner } from "src/shared/python-runner/python-runner";
-import kill from "tree-kill";
-import waitOn from "wait-on";
 import { Duration } from "../utils";
 
-type WebServerProcessConfig = {
-  port: number;
-  processId: number;
-};
 export class OssLoader extends AbstractFiftyoneLoader {
-  protected webserverProcessConfig: WebServerProcessConfig;
-
   constructor() {
     super();
     this.pythonRunner = new PythonRunner(getPythonCommand);
-  }
-
-  async startWebServer(port: number) {
-    if (!port) {
-      throw new Error("port is required");
-    }
-
-    console.log("starting webserver on port", port);
-
-    process.env.FIFTYONE_DATABASE_NAME = `${process.env.FIFTYONE_DATABASE_NAME}-${port}`;
-
-    const mainPyPath = process.env.FIFTYONE_ROOT_DIR
-      ? `${process.env.FIFTYONE_ROOT_DIR}/fiftyone/server/main.py`
-      : "../fiftyone/server/main.py";
-
-    const procString = getPythonCommand([
-      mainPyPath,
-      "--address",
-      "0.0.0.0",
-      "--port",
-      port.toString(),
-      "--clean_start",
-    ]);
-
-    const proc = spawn(procString, { shell: true });
-    proc.stdout.pipe(process.stdout);
-    proc.stderr.pipe(process.stderr);
-
-    this.webserverProcessConfig = {
-      port,
-      processId: proc.pid,
-    };
-
-    console.log(
-      `waiting for webserver (procId = ${proc.pid}) to start on port ${port}...`
-    );
-
-    return waitOn({
-      resources: [`http://0.0.0.0:${port}`],
-      timeout: Duration.Seconds(30),
-    })
-      .then(() => {
-        console.log("webserver started");
-      })
-      .catch((err) => {
-        console.log("webserver failed to start, err = ", err);
-        throw err;
-      });
-  }
-
-  async stopWebServer() {
-    if (!this.webserverProcessConfig.processId) {
-      throw new Error("webserver process not started");
-    }
-
-    return new Promise<void>((resolve, reject) => {
-      kill(this.webserverProcessConfig.processId, "SIGTERM", (err) => {
-        if (err) {
-          reject(err);
-        }
-
-        console.log("webserver stopped");
-        resolve();
-      });
-    });
   }
 
   async loadZooDataset(
@@ -121,15 +47,22 @@ export class OssLoader extends AbstractFiftyoneLoader {
     datasetName: string,
     options?: WaitUntilGridVisibleOptions
   ) {
-    const { isEmptyDataset, savedView, withGrid } = options ?? {
+    const { isEmptyDataset, searchParams, withGrid } = options ?? {
       isEmptyDataset: false,
-      savedView: undefined,
+      searchParams: undefined,
       withGrid: true,
     };
 
+    await page.addInitScript(() => {
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore injecting IS_PLAYWRIGHT into window so that
+      // we can disable 1) analytics, and 2) QA performance toast banners
+      window.IS_PLAYWRIGHT = true;
+    });
+
     const forceDatasetFromSelector = async () => {
       await page.goto("/");
-      await page.getByTestId(`selector-Select dataset`).click();
+      await page.getByTestId("selector-dataset").click();
 
       if (datasetName) {
         await page.getByTestId(`selector-result-${datasetName}`).click();
@@ -141,8 +74,9 @@ export class OssLoader extends AbstractFiftyoneLoader {
       }
     };
 
-    if (savedView) {
-      await page.goto(`/datasets/${datasetName}?view=${savedView}`);
+    const search = searchParams ? searchParams.toString() : undefined;
+    if (search) {
+      await page.goto(`/datasets/${datasetName}?${search}`);
     } else {
       await page.goto(`/datasets/${datasetName}`);
     }
@@ -152,16 +86,18 @@ export class OssLoader extends AbstractFiftyoneLoader {
       await forceDatasetFromSelector();
     }
 
-    if (savedView) {
+    const view = searchParams?.get("view");
+    if (view) {
       const search = await page.evaluate(() => window.location.search);
 
-      if (search !== `?view=${savedView}`) {
-        throw new Error("wrong view");
+      const params = new URLSearchParams(search);
+      if (params.get("view") !== view) {
+        throw new Error(`wrong view: '${params.get("view")}'`);
       }
     }
 
     await page.waitForSelector(
-      `[data-cy=${withGrid ? "flashlight-section" : "panel-container"}]`,
+      `[data-cy=${withGrid ? "spotlight-section-forward" : "panel-container"}]`,
       {
         state: "visible",
       }

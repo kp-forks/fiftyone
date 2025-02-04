@@ -1,15 +1,11 @@
-import {
-  AbstractLooker,
-  BaseState,
-  PointInfo,
-  type Sample,
-} from "@fiftyone/looker";
+import { PointInfo, type Sample } from "@fiftyone/looker";
 import { mainSample, mainSampleQuery } from "@fiftyone/relay";
 import { atom, selector } from "recoil";
 import { graphQLSelector } from "recoil-relay";
 import { VariablesOf } from "relay-runtime";
-import { Nullable } from "vitest";
+import type { Lookers } from "../hooks";
 import { ComputeCoordinatesReturnType } from "../hooks/useTooltip";
+import { ModalSelector, sessionAtom } from "../session";
 import { ResponseFrom } from "../utils";
 import { imaVidLookerState, shouldRenderImaVidLooker } from "./dynamicGroups";
 import {
@@ -27,16 +23,16 @@ import { datasetName } from "./selectors";
 import { mapSampleResponse } from "./utils";
 import { view } from "./view";
 
-export const modalLooker = atom<AbstractLooker<BaseState> | null>({
+export const modalLooker = atom<Lookers | null>({
   key: "modalLooker",
   default: null,
   dangerouslyAllowMutability: true,
 });
 
-export const sidebarSampleId = selector({
+export const sidebarSampleId = selector<null | string>({
   key: "sidebarSampleId",
   get: ({ get }) => {
-    if (get(shouldRenderImaVidLooker)) {
+    if (get(shouldRenderImaVidLooker(true))) {
       const thisFrameNumber = get(imaVidLookerState("currentFrameNumber"));
       const isPlaying = get(imaVidLookerState("playing"));
       const isSeeking = get(imaVidLookerState("seeking"));
@@ -45,7 +41,7 @@ export const sidebarSampleId = selector({
 
       if (!isPlaying && !isSeeking && thisFrameNumber && sample) {
         // is the type incorrect? fix me
-        const id = sample?.id || sample?._id || sample?.sample?._id;
+        const id = sample?.id || sample?._id || (sample?.sample?._id as string);
         if (id) {
           return id;
         }
@@ -73,10 +69,24 @@ export const currentSampleId = selector({
         ? get(pinned3DSample).id
         : get(nullableModalSampleId);
 
-    if (id && id.endsWith("-modal")) {
+    if (id?.endsWith("-modal")) {
       return id.replace("-modal", "");
     }
     return id;
+  },
+});
+
+export const currentModalUniqueId = selector({
+  key: "currentModalId",
+  get: ({ get }) => {
+    const currentSampleIdVal = get(nullableModalSampleId);
+    const currentGroupIdVal = get(groupId);
+
+    if (!currentSampleIdVal && !currentGroupIdVal) {
+      return null;
+    }
+
+    return `${currentGroupIdVal ?? ""}/${currentSampleIdVal}`;
   },
 });
 
@@ -98,46 +108,36 @@ type ModalSampleResponse = ResponseFrom<mainSampleQuery> & {
   sample: ModalSample;
 };
 
-type ModalSelector = {
-  id: string;
-  index: number;
-};
-
-export const currentModalSample = atom<ModalSelector | null>({
-  key: "currentModalSample",
+export const modalSelector = sessionAtom({
+  key: "modalSelector",
   default: null,
 });
 
 export const isModalActive = selector<boolean>({
   key: "isModalActive",
-  get: ({ get }) => Boolean(get(currentModalSample)),
+  get: ({ get }) => Boolean(get(modalSelector)),
 });
 
-export type ModalNavigation = (
-  index: number
-) => Promise<{ id: string; groupId?: string; groupByFieldValue?: string }>;
+export type ModalNavigation = {
+  next: (offset?: number) => Promise<ModalSelector>;
+  previous: (offset?: number) => Promise<ModalSelector>;
+};
 
-export const currentModalNavigation = atom<Nullable<ModalNavigation>>({
-  key: "currentModalNavigation",
-  default: null,
-});
+export const modalNavigation = (() => {
+  let current: ModalNavigation | null;
 
-export const modalSampleIndex = selector<number>({
-  key: "modalSampleIndex",
-  get: ({ get }) => {
-    const current = get(currentModalSample);
-    if (!current) {
-      throw new Error("modal sample is not defined");
-    }
-
-    return current.index;
-  },
-});
+  return {
+    get: () => current,
+    set: (value: ModalNavigation | null) => {
+      current = value;
+    },
+  };
+})();
 
 export const modalSampleId = selector<string>({
   key: "modalSampleId",
   get: ({ get }) => {
-    const current = get(currentModalSample);
+    const current = get(modalSelector);
 
     if (!current) {
       throw new Error("modal sample is not defined");
@@ -150,7 +150,7 @@ export const modalSampleId = selector<string>({
 export const nullableModalSampleId = selector<string>({
   key: "nullableModalSampleId",
   get: ({ get }) => {
-    const current = get(currentModalSample);
+    const current = get(modalSelector);
 
     if (!current) {
       return null;
@@ -183,7 +183,7 @@ export const modalSample = graphQLSelector<
     return mapSampleResponse(data.sample) as ModalSample;
   },
   variables: ({ get }) => {
-    const current = get(currentModalSample);
+    const current = get(modalSelector);
 
     if (current === null) return null;
 

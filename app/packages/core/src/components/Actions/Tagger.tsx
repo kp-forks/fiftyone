@@ -1,3 +1,4 @@
+import { useTrackEvent } from "@fiftyone/analytics";
 import {
   LoadingDots,
   PopoutSectionTitle,
@@ -98,7 +99,7 @@ const Section = ({
   const [count, placeholder] = countAndPlaceholder();
   const disabled = tagging || typeof count !== "number";
   const [changes, setChanges] = useState<{ [key: string]: CheckState }>({});
-  const [active, setActive] = useState(null);
+  const [active, setActive] = useState<null | string>(null);
   const [localTagging, setLocalTagging] = useState(false);
 
   useLayoutEffect(() => {
@@ -108,7 +109,7 @@ const Section = ({
   useLayoutEffect(() => {
     tagging && setLocalTagging(true);
     !tagging && localTagging && close();
-  }, [tagging, localTagging]);
+  }, [close, tagging, localTagging]);
 
   const filter = (obj: object) =>
     Object.fromEntries(
@@ -117,7 +118,11 @@ const Section = ({
       )
     );
 
+  const trackEvent = useTrackEvent();
   const submitWrapper = (changes) => {
+    trackEvent(`tag_${labels ? "label" : "sample"}`, {
+      count,
+    });
     submit({
       changes: Object.fromEntries(
         Object.entries(changes).map(([k, v]) => [k, v === CheckState.ADD])
@@ -177,11 +182,13 @@ const Section = ({
                       ? elementNames.plural
                       : elementNames.singular
                   }`
-                : null
+                : undefined
             }
             onKeyDown={(e) => {
               if (e.key === "Enter" && hasCreate) {
+                e.stopPropagation();
                 setValue("");
+                setActive(null);
                 setChanges({ ...changes, [value]: CheckState.ADD });
               }
             }}
@@ -195,6 +202,7 @@ const Section = ({
       </TaggingContainerInput>
       {count > 0 && (
         <Checker
+          clear={() => setValue("")}
           active={active}
           disabled={disabled}
           items={filter(items)}
@@ -323,9 +331,9 @@ const useTagCallback = (
     () => setSamples(new Set()),
     () => setAggs((cur) => cur + 1),
     ...[
+      useRecoilRefresher_UNSTABLE(fos.activeModalSidebarSample),
       useRecoilRefresher_UNSTABLE(tagStatistics({ modal, labels: false })),
       useRecoilRefresher_UNSTABLE(tagStatistics({ modal, labels: true })),
-      useRecoilRefresher_UNSTABLE(fos.activeModalSidebarSample),
     ],
   ];
 
@@ -340,7 +348,11 @@ const useTagCallback = (
           fos.isOrderedDynamicGroup
         );
 
-        const slices = await snapshot.getPromise(fos.currentSlices(modal));
+        const mode = await snapshot.getPromise(groupStatistics(modal));
+        const currentSlices = await snapshot.getPromise(
+          fos.currentSlices(modal)
+        );
+        const slices = await snapshot.getPromise(fos.groupSlices);
         const { samples } = await getFetchFunction()("POST", "/tag", {
           ...tagParameters({
             activeFields: await snapshot.getPromise(
@@ -355,9 +367,10 @@ const useTagCallback = (
               isGroup && !isNonNestedDynamicGroup
                 ? {
                     id: modal ? await snapshot.getPromise(groupId) : null,
-                    slices,
+                    mode,
+                    currentSlices,
                     slice: await snapshot.getPromise(fos.groupSlice),
-                    mode: await snapshot.getPromise(groupStatistics(modal)),
+                    slices,
                   }
                 : null,
             modal,

@@ -1,5 +1,5 @@
 /**
- * Copyright 2017-2024, Voxel51, Inc.
+ * Copyright 2017-2025, Voxel51, Inc.
  */
 
 import { FrameState, StateUpdate } from "../state";
@@ -26,7 +26,11 @@ export class FrameNumberElement extends BaseElement<FrameState> {
     config: { frameRate, frameNumber },
   }: Readonly<FrameState>) {
     if (duration) {
-      this.element.innerHTML = getFrameString(frameNumber, duration, frameRate);
+      this.element.textContent = getFrameString(
+        frameNumber,
+        duration,
+        frameRate
+      );
     }
     return this.element;
   }

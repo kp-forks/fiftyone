@@ -39,7 +39,7 @@ a |DatasetView| into any format of your choice via the basic recipe below.
         import fiftyone as fo
 
         # The Dataset or DatasetView containing the samples you wish to export
-        dataset_or_view = fo.Dataset(...)
+        dataset_or_view = fo.load_dataset(...)
 
         # The directory to which to write the exported dataset
         export_dir = "/path/for/export"
@@ -564,7 +564,7 @@ disk as follows:
         export_dir = "/path/for/images-dir"
 
         # The dataset or view to export
-        dataset_or_view = fo.Dataset(...)
+        dataset_or_view = fo.load_dataset(...)
 
         # Export the dataset
         dataset_or_view.export(
@@ -622,7 +622,7 @@ disk as follows:
         export_dir = "/path/for/videos-dir"
 
         # The dataset or view to export
-        dataset_or_view = fo.Dataset(...)
+        dataset_or_view = fo.load_dataset(...)
 
         # Export the dataset
         dataset_or_view.export(
@@ -680,7 +680,7 @@ disk as follows:
         export_dir = "/path/for/media-dir"
 
         # The dataset or view to export
-        dataset_or_view = fo.Dataset(...)
+        dataset_or_view = fo.load_dataset(...)
 
         # Export the dataset
         dataset_or_view.export(
@@ -828,7 +828,7 @@ disk in the above format as follows:
         label_field = "ground_truth"  # for example
 
         # The dataset or view to export
-        dataset_or_view = fo.Dataset(...)
+        dataset_or_view = fo.load_dataset(...)
 
         # Export the dataset
         dataset_or_view.export(
@@ -891,7 +891,7 @@ the input paths.
         label_field = "ground_truth"  # for example
 
         # The dataset or view to export
-        dataset_or_view = fo.Dataset(...)
+        dataset_or_view = fo.load_dataset(...)
 
         # Export labels using the basename of each image as keys
         dataset_or_view.export(
@@ -985,7 +985,7 @@ stored on disk in the above format as follows:
         label_field = "ground_truth"  # for example
 
         # The dataset or view to export
-        dataset_or_view = fo.Dataset(...)
+        dataset_or_view = fo.load_dataset(...)
 
         # Export the dataset
         dataset_or_view.export(
@@ -1061,7 +1061,7 @@ stored on disk in the above format as follows:
         label_field = "ground_truth"  # for example
 
         # The dataset or view to export
-        dataset_or_view = fo.Dataset(...)
+        dataset_or_view = fo.load_dataset(...)
 
         # Export the dataset
         dataset_or_view.export(
@@ -1151,7 +1151,7 @@ format as follows:
         label_field = "ground_truth"  # for example
 
         # The dataset or view to export
-        dataset_or_view = fo.Dataset(...)
+        dataset_or_view = fo.load_dataset(...)
 
         # Export the dataset
         dataset_or_view.export(
@@ -1277,7 +1277,7 @@ format as follows:
         label_field = "ground_truth"  # for example
 
         # The dataset or view to export
-        dataset_or_view = fo.Dataset(...)
+        dataset_or_view = fo.load_dataset(...)
 
         # Export the dataset
         dataset_or_view.export(
@@ -1340,7 +1340,7 @@ the input paths.
         label_field = "ground_truth"  # for example
 
         # The dataset or view to export
-        dataset_or_view = fo.Dataset(...)
+        dataset_or_view = fo.load_dataset(...)
 
         # Export labels using the basename of each image as keys
         dataset_or_view.export(
@@ -1502,7 +1502,7 @@ disk in the above format as follows:
         label_field = "ground_truth"  # for example
 
         # The dataset or view to export
-        dataset_or_view = fo.Dataset(...)
+        dataset_or_view = fo.load_dataset(...)
 
         # Export the dataset
         dataset_or_view.export(
@@ -1565,7 +1565,7 @@ the input paths.
         label_field = "ground_truth"  # for example
 
         # The dataset or view to export
-        dataset_or_view = fo.Dataset(...)
+        dataset_or_view = fo.load_dataset(...)
 
         # Export labels using the basename of each image as keys
         dataset_or_view.export(
@@ -1646,9 +1646,8 @@ where `labels.json` is a JSON file in the following format:
         },
         "licenses": [],
         "categories": [
-            ...
             {
-                "id": 2,
+                "id": 1,
                 "name": "cat",
                 "supercategory": "animal"
             },
@@ -1669,7 +1668,7 @@ where `labels.json` is a JSON file in the following format:
             {
                 "id": 1,
                 "image_id": 1,
-                "category_id": 2,
+                "category_id": 1,
                 "bbox": [260, 177, 231, 199],
                 "segmentation": [...],
                 "score": 0.95,
@@ -1717,7 +1716,7 @@ format as follows:
         label_field = "ground_truth"  # for example
 
         # The dataset or view to export
-        dataset_or_view = fo.Dataset(...)
+        dataset_or_view = fo.load_dataset(...)
 
         # Export the dataset
         dataset_or_view.export(
@@ -1765,7 +1764,7 @@ the `labels_path` parameter instead of `export_dir`:
         label_field = "ground_truth"  # for example
 
         # The dataset or view to export
-        dataset_or_view = fo.Dataset(...)
+        dataset_or_view = fo.load_dataset(...)
 
         # Export labels
         dataset_or_view.export(
@@ -1890,7 +1889,7 @@ format as follows:
         label_field = "ground_truth"  # for example
 
         # The dataset or view to export
-        dataset_or_view = fo.Dataset(...)
+        dataset_or_view = fo.load_dataset(...)
 
         # Export the dataset
         dataset_or_view.export(
@@ -1929,7 +1928,7 @@ the `labels_path` parameter instead of `export_dir`:
         label_field = "ground_truth"  # for example
 
         # The dataset or view to export
-        dataset_or_view = fo.Dataset(...)
+        dataset_or_view = fo.load_dataset(...)
 
         # Export labels
         dataset_or_view.export(
@@ -2044,7 +2043,7 @@ format as follows:
         label_field = "ground_truth"  # for example
 
         # The dataset or view to export
-        dataset_or_view = fo.Dataset(...)
+        dataset_or_view = fo.load_dataset(...)
 
         # Export the dataset
         dataset_or_view.export(
@@ -2083,7 +2082,7 @@ the `labels_path` parameter instead of `export_dir`:
         label_field = "ground_truth"  # for example
 
         # The dataset or view to export
-        dataset_or_view = fo.Dataset(...)
+        dataset_or_view = fo.load_dataset(...)
 
         # Export labels
         dataset_or_view.export(
@@ -2194,7 +2193,7 @@ follows:
         label_field = "ground_truth"  # for example
 
         # The dataset or view to export
-        dataset_or_view = fo.Dataset(...)
+        dataset_or_view = fo.load_dataset(...)
 
         # Export the dataset
         dataset_or_view.export(
@@ -2241,7 +2240,7 @@ the `labels_path` parameter instead of `export_dir`:
         label_field = "ground_truth"  # for example
 
         # The dataset or view to export
-        dataset_or_view = fo.Dataset(...)
+        dataset_or_view = fo.load_dataset(...)
 
         # Export labels
         dataset_or_view.export(
@@ -2372,7 +2371,7 @@ follows:
 
     # The dataset or view to export
     # We assume the dataset uses sample tags to encode the splits to export
-    dataset_or_view = fo.Dataset(...)
+    dataset_or_view = fo.load_dataset(...)
 
     # Export the splits
     for split in splits:
@@ -2405,7 +2404,7 @@ the `labels_path` parameter instead of `export_dir`:
     label_field = "ground_truth"  # for example
 
     # The dataset or view to export
-    dataset_or_view = fo.Dataset(...)
+    dataset_or_view = fo.load_dataset(...)
 
     # Export labels
     dataset_or_view.export(
@@ -2506,7 +2505,7 @@ format as follows:
         label_field = "ground_truth"  # for example
 
         # The dataset or view to export
-        dataset_or_view = fo.Dataset(...)
+        dataset_or_view = fo.load_dataset(...)
 
         # Export the dataset
         dataset_or_view.export(
@@ -2604,7 +2603,7 @@ format as follows:
         label_field = "ground_truth"  # for example
 
         # The dataset or view to export
-        dataset_or_view = fo.Dataset(...)
+        dataset_or_view = fo.load_dataset(...)
 
         # Export the dataset
         dataset_or_view.export(
@@ -2643,7 +2642,7 @@ parameter instead of `export_dir`:
         label_field = "ground_truth"  # for example
 
         # The dataset or view to export
-        dataset_or_view = fo.Dataset(...)
+        dataset_or_view = fo.load_dataset(...)
 
         # Export labels
         dataset_or_view.export(
@@ -2810,7 +2809,7 @@ as follows:
         label_field = "ground_truth"  # for example
 
         # The dataset or view to export
-        dataset_or_view = fo.Dataset(...)
+        dataset_or_view = fo.load_dataset(...)
 
         # Export the dataset
         dataset_or_view.export(
@@ -2849,7 +2848,7 @@ the `labels_path` parameter instead of `export_dir`:
         label_field = "ground_truth"  # for example
 
         # The dataset or view to export
-        dataset_or_view = fo.Dataset(...)
+        dataset_or_view = fo.load_dataset(...)
 
         # Export labels
         dataset_or_view.export(
@@ -3017,7 +3016,7 @@ as follows:
         label_field = "ground_truth"  # for example
 
         # The dataset or view to export
-        dataset_or_view = fo.Dataset(...)
+        dataset_or_view = fo.load_dataset(...)
 
         # Export the dataset
         dataset_or_view.export(
@@ -3056,7 +3055,7 @@ the `labels_path` parameter instead of `export_dir`:
         label_field = "ground_truth"  # for example
 
         # The dataset or view to export
-        dataset_or_view = fo.Dataset(...)
+        dataset_or_view = fo.load_dataset(...)
 
         # Export labels
         dataset_or_view.export(
@@ -3157,7 +3156,7 @@ format as follows:
         label_field = "ground_truth"  # for example
 
         # The dataset or view to export
-        dataset_or_view = fo.Dataset(...)
+        dataset_or_view = fo.load_dataset(...)
 
         # Export the dataset
         dataset_or_view.export(
@@ -3257,7 +3256,7 @@ as follows:
         label_field = "ground_truth"  # for example
 
         # The dataset or view to export
-        dataset_or_view = fo.Dataset(...)
+        dataset_or_view = fo.load_dataset(...)
 
         # Export the dataset
         dataset_or_view.export(
@@ -3421,7 +3420,7 @@ follows:
         label_field = "ground_truth"  # for example
 
         # The dataset or view to export
-        dataset_or_view = fo.Dataset(...)
+        dataset_or_view = fo.load_dataset(...)
 
         # Export the dataset
         dataset_or_view.export(
@@ -3460,7 +3459,7 @@ the `labels_path` parameter instead of `export_dir`:
         label_field = "ground_truth"  # for example
 
         # The dataset or view to export
-        dataset_or_view = fo.Dataset(...)
+        dataset_or_view = fo.load_dataset(...)
 
         # Export labels
         dataset_or_view.export(
@@ -3540,7 +3539,7 @@ follows:
         export_dir = "/path/for/csv-dataset"
 
         # The dataset or view to export
-        dataset_or_view = fo.Dataset(...)
+        dataset_or_view = fo.load_dataset(...)
 
         # Export the dataset
         dataset_or_view.export(
@@ -3578,7 +3577,7 @@ parameter instead of `export_dir`:
         labels_path = "/path/for/labels.csv"
 
         # The dataset or view to export
-        dataset_or_view = fo.Dataset(...)
+        dataset_or_view = fo.load_dataset(...)
 
         # Export labels with absolute media paths
         dataset_or_view.export(
@@ -3695,7 +3694,7 @@ follows:
         export_dir = "/path/for/geojson-dataset"
 
         # The dataset or view to export
-        dataset_or_view = fo.Dataset(...)
+        dataset_or_view = fo.load_dataset(...)
 
         # Export the dataset
         dataset_or_view.export(
@@ -3731,7 +3730,7 @@ providing the `labels_path` parameter instead of `export_dir`:
         label_field = "ground_truth"  # for example
 
         # The dataset or view to export
-        dataset_or_view = fo.Dataset(...)
+        dataset_or_view = fo.load_dataset(...)
 
         # Export labels
         dataset_or_view.export(
@@ -3816,7 +3815,7 @@ You can export a FiftyOne dataset to disk in the above format as follows:
         export_dir = "/path/for/fiftyone-dataset"
 
         # The dataset or view to export
-        dataset_or_view = fo.Dataset(...)
+        dataset_or_view = fo.load_dataset(...)
 
         # Export the dataset
         dataset_or_view.export(
@@ -3862,7 +3861,7 @@ image's filepath, and then provide the new `rel_dir` when
         export_dir = "/path/for/fiftyone-dataset"
 
         # The dataset or view to export
-        dataset_or_view = fo.Dataset(...)
+        dataset_or_view = fo.load_dataset(...)
 
         # Export the dataset without copying the media files
         dataset_or_view.export(
@@ -3930,7 +3929,7 @@ media files per directory:
     export_dir = "/path/for/fiftyone-dataset"
 
     # The dataset or view to export
-    dataset_or_view = fo.Dataset(...)
+    dataset_or_view = fo.load_dataset(...)
 
     # Export the dataset with a maximum of 1000 media files per directory
     dataset_or_view.export(
@@ -3974,7 +3973,7 @@ a |Dataset| or |DatasetView| in your custom format using the following recipe:
     import fiftyone as fo
 
     # The dataset or view to export
-    dataset_or_view = fo.Dataset(...)
+    dataset_or_view = fo.load_dataset(...)
 
     # Create an instance of your custom dataset exporter
     exporter = CustomDatasetExporter(...)
@@ -3994,7 +3993,7 @@ datasets in your custom format using the following recipe:
     dataset_type = CustomDataset
 
     # The dataset or view to export
-    dataset_or_view = fo.Dataset(...)
+    dataset_or_view = fo.load_dataset(...)
 
     # Export the dataset
     dataset_or_view.export(dataset_type=dataset_type, ...)

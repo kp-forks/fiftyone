@@ -14,13 +14,19 @@ const test = base.extend<{ sidebar: SidebarPom; grid: GridPom }>({
   },
 });
 
-test.describe("sidebar-filter-visibility", () => {
-  test.beforeAll(async ({ fiftyoneLoader }) => {
-    await fiftyoneLoader.loadZooDataset("quickstart", datasetName, {
-      max_samples: 5,
-    });
-  });
+test.afterAll(async ({ foWebServer }) => {
+  await foWebServer.stopWebServer();
+});
 
+test.beforeAll(async ({ fiftyoneLoader, foWebServer }) => {
+  await foWebServer.startWebServer();
+
+  await fiftyoneLoader.loadZooDataset("quickstart", datasetName, {
+    max_samples: 5,
+  });
+});
+
+test.describe.serial("sidebar-filter-visibility", () => {
   test.beforeEach(async ({ page, fiftyoneLoader }) => {
     await fiftyoneLoader.waitUntilGridVisible(page, datasetName);
     // always fold tags and metaData groups
@@ -51,7 +57,7 @@ test.describe("sidebar-filter-visibility", () => {
     // verify the number of samples in the result
     await grid.assert.isEntryCountTextEqualTo("1 of 5 samples");
 
-    await expect(await grid.getNthFlashlightSection(0)).toHaveScreenshot(
+    await expect(await grid.getForwardSection()).toHaveScreenshot(
       "select-bottle.png",
       { animations: "allow" }
     );
@@ -66,7 +72,7 @@ test.describe("sidebar-filter-visibility", () => {
       "show-label"
     );
 
-    await expect(await grid.getNthFlashlightSection(0)).toHaveScreenshot(
+    await expect(await grid.getForwardSection()).toHaveScreenshot(
       "select-bottle-show-cat.png",
       { animations: "allow" }
     );
@@ -78,7 +84,7 @@ test.describe("sidebar-filter-visibility", () => {
       "hide-label"
     );
 
-    await expect(await grid.getNthFlashlightSection(0)).toHaveScreenshot(
+    await expect(await grid.getForwardSection()).toHaveScreenshot(
       "select-bottle-hide-person-cat.png",
       { animations: "allow" }
     );
@@ -109,7 +115,7 @@ test.describe("sidebar-filter-visibility", () => {
     await grid.assert.isEntryCountTextEqualTo("5 samples");
     await grid.waitForGridToLoad();
     await grid.assert.isLookerCountEqualTo(5);
-    await expect(await grid.getNthFlashlightSection(0)).toHaveScreenshot(
+    await expect(await grid.getForwardSection()).toHaveScreenshot(
       "exclude-bottle.png",
       { animations: "allow" }
     );
@@ -124,7 +130,7 @@ test.describe("sidebar-filter-visibility", () => {
       "show-label"
     );
 
-    await expect(await grid.getNthFlashlightSection(0)).toHaveScreenshot(
+    await expect(await grid.getForwardSection()).toHaveScreenshot(
       "exclude-bottle-show-cup.png",
       { animations: "allow" }
     );
@@ -136,7 +142,7 @@ test.describe("sidebar-filter-visibility", () => {
       "hide-label"
     );
 
-    await expect(await grid.getNthFlashlightSection(0)).toHaveScreenshot(
+    await expect(await grid.getForwardSection()).toHaveScreenshot(
       "exclude-bottle-hide-cup.png",
       { animations: "allow" }
     );
@@ -157,6 +163,8 @@ test.describe("sidebar-filter-visibility", () => {
 
     await sidebar.clickFieldDropdown("ground_truth");
     await entryExpandPromise;
+
+    const gridRefreshPromise = grid.getWaitForGridRefreshPromise();
     await sidebar.applyLabelFromList(
       "ground_truth.detections.label",
       ["bottle"],
@@ -165,12 +173,11 @@ test.describe("sidebar-filter-visibility", () => {
 
     // verify the number of samples in the result
     await grid.assert.isEntryCountTextEqualTo("1 of 5 samples");
-    await grid.waitForGridToLoad();
+    await gridRefreshPromise;
 
-    await expect(await grid.getNthFlashlightSection(0)).toHaveScreenshot(
-      "show-bottle.png",
-      { animations: "allow" }
-    );
+    await expect(grid.getForwardSection()).toHaveScreenshot("show-bottle.png", {
+      animations: "allow",
+    });
 
     // Test with visibility mode:
     await sidebar.toggleSidebarMode();
@@ -182,7 +189,7 @@ test.describe("sidebar-filter-visibility", () => {
       "show-label"
     );
 
-    await expect(await grid.getNthFlashlightSection(0)).toHaveScreenshot(
+    await expect(await grid.getForwardSection()).toHaveScreenshot(
       "show-bottle-show-cup.png",
       { animations: "allow" }
     );
@@ -194,7 +201,7 @@ test.describe("sidebar-filter-visibility", () => {
       "hide-label"
     );
 
-    await expect(await grid.getNthFlashlightSection(0)).toHaveScreenshot(
+    await expect(await grid.getForwardSection()).toHaveScreenshot(
       "show-bottle-hide-cup.png",
       { animations: "allow" }
     );
@@ -224,7 +231,7 @@ test.describe("sidebar-filter-visibility", () => {
     await grid.assert.isEntryCountTextEqualTo("4 of 5 samples");
     await grid.waitForGridToLoad();
 
-    await expect(await grid.getNthFlashlightSection(0)).toHaveScreenshot(
+    await expect(await grid.getForwardSection()).toHaveScreenshot(
       "hide-bottle.png",
       { animations: "allow" }
     );
@@ -239,7 +246,7 @@ test.describe("sidebar-filter-visibility", () => {
       "show-label"
     );
 
-    await expect(await grid.getNthFlashlightSection(0)).toHaveScreenshot(
+    await expect(await grid.getForwardSection()).toHaveScreenshot(
       "hide-bottle-show-horse.png",
       { animations: "allow" }
     );
@@ -251,7 +258,7 @@ test.describe("sidebar-filter-visibility", () => {
       "hide-label"
     );
 
-    await expect(await grid.getNthFlashlightSection(0)).toHaveScreenshot(
+    await expect(await grid.getForwardSection()).toHaveScreenshot(
       "hide-bottle-hide-horse.png",
       { animations: "allow" }
     );

@@ -1,13 +1,14 @@
 """
 Interface for sample collections.
 
-| Copyright 2017-2024, Voxel51, Inc.
+| Copyright 2017-2025, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
 
 from collections import defaultdict
 from copy import copy
+from datetime import datetime
 import fnmatch
 import itertools
 import logging
@@ -19,7 +20,7 @@ import timeit
 import warnings
 
 from bson import ObjectId
-from pymongo import InsertOne, UpdateOne, UpdateMany
+from pymongo import InsertOne, UpdateOne, UpdateMany, WriteConcern
 
 import eta.core.serial as etas
 import eta.core.utils as etau
@@ -48,6 +49,7 @@ fov = fou.lazy_import("fiftyone.core.view")
 foua = fou.lazy_import("fiftyone.utils.annotations")
 foud = fou.lazy_import("fiftyone.utils.data")
 foue = fou.lazy_import("fiftyone.utils.eval")
+foos = fou.lazy_import("fiftyone.operators.store")
 
 
 logger = logging.getLogger(__name__)
@@ -113,9 +115,11 @@ class SaveContext(object):
         self._dataset = sample_collection._dataset
         self._sample_coll = sample_collection._dataset._sample_collection
         self._frame_coll = sample_collection._dataset._frame_collection
+        self._is_generated = sample_collection._is_generated
 
         self._sample_ops = []
         self._frame_ops = []
+        self._batch_ids = []
         self._reload_parents = []
 
         self._batching_strategy = batching_strategy
@@ -158,6 +162,9 @@ class SaveContext(object):
         if frame_ops:
             self._frame_ops.extend(frame_ops)
 
+        if updated and self._is_generated:
+            self._batch_ids.append(sample.id)
+
         if updated and isinstance(sample, fosa.SampleView):
             self._reload_parents.append(sample)
 
@@ -194,6 +201,10 @@ class SaveContext(object):
             foo.bulk_write(self._frame_ops, self._frame_coll, ordered=False)
             self._frame_ops.clear()
 
+        if self._batch_ids and self._is_generated:
+            self.sample_collection._sync_source(ids=self._batch_ids)
+            self._batch_ids.clear()
+
         if self._reload_parents:
             for sample in self._reload_parents:
                 sample._reload_parents()
@@ -206,6 +217,8 @@ class SampleCollection(object):
     :class:`fiftyone.core.sample.Sample` instances in a
     :class:`fiftyone.core.dataset.Dataset`.
     """
+
+    __slots__ = ("__weakref__",)
 
     _FRAMES_PREFIX = "frames."
     _GROUPS_PREFIX = "groups."
@@ -567,17 +580,161 @@ class SampleCollection(object):
         """
         raise NotImplementedError("Subclass must implement summary()")
 
-    def stats(self, include_media=False, compressed=False):
+    def sync_last_modified_at(self, include_frames=True):
+        """Syncs the ``last_modified_at`` property(s) of the dataset.
+
+        Updates the :attr:`last_modified_at` property of the dataset if
+        necessary to incorporate any modification timestamps to its samples.
+
+        If ``include_frames==True``, the ``last_modified_at`` property of
+        each video sample is first updated if necessary to incorporate any
+        modification timestamps to its frames.
+
+        Args:
+            include_frames (True): whether to update the ``last_modified_at``
+                property of video samples. Only applicable to datasets that
+                contain videos
+        """
+        if include_frames:
+            self._sync_samples_last_modified_at()
+
+        self._sync_dataset_last_modified_at()
+
+    def _sync_samples_last_modified_at(self):
+        if not self._contains_videos(any_slice=True):
+            return
+
+        full_dataset = isinstance(self, fod.Dataset)
+        dataset = self._root_dataset
+        if self.media_type == fom.GROUP and not full_dataset:
+            view = self.select_group_slices(media_type=fom.VIDEO)
+        else:
+            view = self
+
+        pipeline = [
+            {
+                "$group": {
+                    "_id": "$_sample_id",
+                    "last_modified_at": {"$max": "$last_modified_at"},
+                }
+            },
+            {
+                "$merge": {
+                    "into": dataset._sample_collection_name,
+                    "on": "_id",
+                    "whenMatched": [
+                        {
+                            "$set": {
+                                "last_modified_at": {
+                                    "$max": [
+                                        "$last_modified_at",
+                                        "$$new.last_modified_at",
+                                    ]
+                                }
+                            }
+                        }
+                    ],
+                    "whenNotMatched": "discard",
+                }
+            },
+        ]
+
+        if full_dataset:
+            foo.aggregate(dataset._frame_collection, pipeline)
+        else:
+            view._aggregate(frames_only=True, post_pipeline=pipeline)
+
+    def _sync_dataset_last_modified_at(self):
+        dataset = self._root_dataset
+        curr_lma = dataset.last_modified_at
+        lma = self._max("last_modified_at")
+
+        if lma is not None and (curr_lma is None or lma > curr_lma):
+            dataset._doc.last_modified_at = lma
+            dataset._doc.save(virtual=True)
+
+    def _min(self, path):
+        return self._get_extremum(path, 1)
+
+    def _max(self, path):
+        return self._get_extremum(path, -1)
+
+    def _get_extremum(self, path, order):
+        #
+        # This method exists in addition to `min()` and `max()` aggregations
+        # for two reasons:
+        #
+        # 1. `$sort + $limit 1` is more efficient than `$group _id: None` when
+        #    the field is indexed
+        #
+        # 2. When `path` is a frame-level field, these methods are optimized to
+        #    directly aggregate on the frames collection, which is something
+        #    that the Aggregation classes do not yet support. In other words,
+        #    `dataset._max("frames.last_modified_at")` is currently more
+        #    performant than `dataset.max("frames.last_modified_at")`
+        #
+
+        path, is_frame_field = self._handle_frame_field(path)
+        path = self._handle_db_field(path, frames=is_frame_field)
+
+        if is_frame_field and not self._contains_videos(any_slice=True):
+            return
+
+        if isinstance(self, fod.Dataset):
+            # pylint:disable=no-member
+            dataset = self
+            if is_frame_field:
+                coll = dataset._frame_collection
+            else:
+                coll = dataset._sample_collection
+
+            pipeline = [
+                {"$sort": {path: order}},
+                {"$limit": 1},
+                {"$project": {path: True}},
+            ]
+
+            results = foo.aggregate(coll, pipeline)
+        else:
+            if self.media_type == fom.GROUP:
+                if is_frame_field:
+                    view = self.select_group_slices(media_type=fom.VIDEO)
+                else:
+                    view = self.select_group_slices(_allow_mixed=True)
+            else:
+                view = self
+
+            op = "$min" if order > 0 else "$max"
+            pipeline = [{"$group": {"_id": None, path: {op: "$" + path}}}]
+
+            results = view._aggregate(
+                frames_only=is_frame_field, post_pipeline=pipeline
+            )
+
+        try:
+            return next(iter(results))[path]
+        except:
+            return None
+
+    def stats(
+        self,
+        include_media=False,
+        include_indexes=False,
+        compressed=False,
+    ):
         """Returns stats about the collection on disk.
 
         The ``samples`` keys refer to the sample documents stored in the
         database.
 
+        For video datasets, the ``frames`` keys refer to the frame documents
+        stored in the database.
+
         The ``media`` keys refer to the raw media associated with each sample
         on disk.
 
-        For video datasets, the ``frames`` keys refer to the frame documents
-        stored in the database.
+        The ``index[es]`` keys refer to the indexes associated with the
+        dataset.
 
         Note that dataset-level metadata such as annotation runs are not
         included in this computation.
@@ -585,6 +742,8 @@ class SampleCollection(object):
         Args:
             include_media (False): whether to include stats about the size of
                 the raw media in the collection
+            include_indexes (False): whether to include stats on the dataset's
+                indexes
             compressed (False): whether to return the sizes of collections in
                 their compressed form on disk (True) or the logical
                 uncompressed size of the collections (False). This option is
@@ -629,6 +788,24 @@ class SampleCollection(object):
             stats["media_bytes"] = media_bytes
             stats["media_size"] = etau.to_human_bytes_str(media_bytes)
             total_bytes += media_bytes
+
+        if include_indexes:
+            ii = self.get_index_information(include_stats=True)
+            index_bytes = {k: v["size"] for k, v in ii.items()}
+            indexes_bytes = sum(index_bytes.values())
+            indexes_in_progress = [
+                k for k, v in ii.items() if v.get("in_progress", False)
+            ]
+
+            stats["indexes_count"] = len(index_bytes)
+            stats["indexes_bytes"] = indexes_bytes
+            stats["indexes_size"] = etau.to_human_bytes_str(indexes_bytes)
+            stats["indexes_in_progress"] = indexes_in_progress
+            stats["index_bytes"] = index_bytes
+            stats["index_sizes"] = {
+                k: etau.to_human_bytes_str(v) for k, v in index_bytes.items()
+            }
+            total_bytes += indexes_bytes
 
         stats["total_bytes"] = total_bytes
         stats["total_size"] = etau.to_human_bytes_str(total_bytes)
@@ -1135,11 +1312,35 @@ class SampleCollection(object):
 
         return path in default_fields
 
+    def _is_read_only_field(self, path):
+        _, _, read_only = self._parse_field(path, include_private=True)
+        return read_only
+
+    def _get_default_field(self, path):
+        _path, is_frame_field = self._handle_frame_field(path)
+
+        if "." in _path:
+            root, leaf = path.rsplit(".", 1)
+            root_field = self.get_field(root, leaf=True)
+            if root_field is None:
+                return None
+
+            root_type = root_field.document_type
+        elif is_frame_field:
+            leaf = _path
+            root_type = foo.DatasetFrameDocument
+        else:
+            leaf = _path
+            root_type = foo.DatasetSampleDocument
+
+        return root_type._fields.get(leaf, None)
+
     def get_field(
         self,
         path,
         ftype=None,
         embedded_doc_type=None,
+        read_only=None,
         include_private=False,
         leaf=False,
     ):
@@ -1153,6 +1354,8 @@ class SampleCollection(object):
             embedded_doc_type (None): an optional embedded document type to
                 enforce. Must be a subclass of
                 :class:`fiftyone.core.odm.BaseEmbeddedDocument`
+            read_only (None): whether to optionally enforce that the field is
+                read-only (True) or not read-only (False)
             include_private (False): whether to include fields that start with
                 ``_`` in the returned schema
             leaf (False): whether to return the subfield of list fields
@@ -1161,18 +1364,24 @@ class SampleCollection(object):
             a :class:`fiftyone.core.fields.Field` instance or ``None``
 
         Raises:
-            ValueError: if the field does not match provided type constraints
+            ValueError: if the field does not match provided constraints
         """
-        fof.validate_type_constraints(
-            ftype=ftype, embedded_doc_type=embedded_doc_type
+        fof.validate_constraints(
+            ftype=ftype,
+            embedded_doc_type=embedded_doc_type,
+            read_only=read_only,
         )
 
-        _, field = self._parse_field(
+        _, field, _ = self._parse_field(
             path, include_private=include_private, leaf=leaf
         )
 
         fof.validate_field(
-            field, path=path, ftype=ftype, embedded_doc_type=embedded_doc_type
+            field,
+            path=path,
+            ftype=ftype,
+            embedded_doc_type=embedded_doc_type,
+            read_only=read_only,
         )
 
         return field
@@ -1181,7 +1390,7 @@ class SampleCollection(object):
         keys = path.split(".")
 
         if not keys:
-            return None, None
+            return None, None, None
 
         resolved_keys = []
 
@@ -1203,6 +1412,7 @@ class SampleCollection(object):
             schema = self.get_field_schema(include_private=include_private)
 
         field = None
+        read_only = None
 
         for idx, field_name in enumerate(keys):
             field_name = _handle_id_field(
@@ -1212,9 +1422,10 @@ class SampleCollection(object):
             field = schema.get(field_name, None)
 
             if field is None:
-                return None, None
+                return None, None, read_only
 
             resolved_keys.append(field.db_field or field.name)
+            read_only = field.read_only
             last_key = idx == len(keys) - 1
 
             if last_key and not leaf:
@@ -1230,14 +1441,18 @@ class SampleCollection(object):
 
         resolved_path = ".".join(resolved_keys)
 
-        return resolved_path, field
+        return resolved_path, field, read_only
 
     def get_field_schema(
         self,
         ftype=None,
         embedded_doc_type=None,
+        read_only=None,
+        info_keys=None,
+        created_after=None,
         include_private=False,
         flat=False,
+        mode=None,
     ):
         """Returns a schema dictionary describing the fields of the samples in
         the collection.
@@ -1250,13 +1465,24 @@ class SampleCollection(object):
                 iterable of types to which to restrict the returned schema.
                 Must be subclass(es) of
                 :class:`fiftyone.core.odm.BaseEmbeddedDocument`
+            read_only (None): whether to restrict to (True) or exclude (False)
+                read-only fields. By default, all fields are included
+            info_keys (None): an optional key or list of keys that must be in
+                the field's ``info`` dict
+            created_after (None): an optional ``datetime`` specifying a minimum
+                creation date
             include_private (False): whether to include fields that start with
                 ``_`` in the returned schema
             flat (False): whether to return a flattened schema where all
                 embedded document fields are included as top-level keys
+            mode (None): whether to apply the above constraints before and/or
+                after flattening the schema. Only applicable when ``flat`` is
+                True. Supported values are ``("before", "after", "both")``.
+                The default is ``"after"``
 
         Returns:
-             a dictionary mapping field names to field types
+            a dict mapping field names to :class:`fiftyone.core.fields.Field`
+            instances
         """
         raise NotImplementedError("Subclass must implement get_field_schema()")
 
@@ -1264,11 +1490,15 @@ class SampleCollection(object):
         self,
         ftype=None,
         embedded_doc_type=None,
+        read_only=None,
+        info_keys=None,
+        created_after=None,
         include_private=False,
         flat=False,
+        mode=None,
     ):
-        """Returns a schema dictionary describing the fields of the frames of
-        the samples in the collection.
+        """Returns a schema dictionary describing the fields of the frames in
+        the collection.
 
         Only applicable for collections that contain videos.
 
@@ -1279,14 +1509,24 @@ class SampleCollection(object):
             embedded_doc_type (None): an optional embedded document type to
                 which to restrict the returned schema. Must be a subclass of
                 :class:`fiftyone.core.odm.BaseEmbeddedDocument`
+            read_only (None): whether to restrict to (True) or exclude (False)
+                read-only fields. By default, all fields are included
+            info_keys (None): an optional key or list of keys that must be in
+                the field's ``info`` dict
+            created_after (None): an optional ``datetime`` specifying a minimum
+                creation date
             include_private (False): whether to include fields that start with
                 ``_`` in the returned schema
             flat (False): whether to return a flattened schema where all
                 embedded document fields are included as top-level keys
+            mode (None): whether to apply the above constraints before and/or
+                after flattening the schema. Only applicable when ``flat`` is
+                True. Supported values are ``("before", "after", "both")``.
+                The default is ``"after"``
 
         Returns:
-            a dictionary mapping field names to field types, or ``None`` if
-            the collection does not contain videos
+            a dict mapping field names to :class:`fiftyone.core.fields.Field`
+            instances, or ``None`` if the collection does not contain videos
         """
         raise NotImplementedError(
             "Subclass must implement get_frame_field_schema()"
@@ -1306,8 +1546,8 @@ class SampleCollection(object):
                 embedded documents
 
         Returns:
-            a dictionary mapping field paths to field types or lists of field
-            types
+            a dict mapping field paths to :class:`fiftyone.core.fields.Field`
+            instances or lists of them
         """
         return self._get_dynamic_field_schema(
             fields=fields, recursive=recursive
@@ -1315,7 +1555,7 @@ class SampleCollection(object):
 
     def get_dynamic_frame_field_schema(self, fields=None, recursive=True):
         """Returns a schema dictionary describing the dynamic fields of the
-        frames of the samples in the collection.
+        frames in the collection.
 
         Dynamic fields are embedded document fields with at least one non-None
         value that have not been declared on the dataset's schema.
@@ -1327,8 +1567,9 @@ class SampleCollection(object):
                 embedded documents
 
         Returns:
-            a dictionary mapping field paths to field types or lists of field
-            types, or ``None`` if the collection does not contain videos
+            a dict mapping field paths to :class:`fiftyone.core.fields.Field`
+            instances or lists of them, or ``None`` if the collection does not
+            contain videos
         """
         if not self._has_frame_fields():
             return None
@@ -1659,6 +1900,11 @@ class SampleCollection(object):
         view._edit_sample_tags(update)
 
     def _edit_sample_tags(self, update):
+        if self._is_read_only_field("tags"):
+            raise ValueError("Cannot edit read-only field 'tags'")
+
+        update["$set"] = {"last_modified_at": datetime.utcnow()}
+
         ids = []
         ops = []
         batch_size = fou.recommend_batch_size_for_value(
@@ -1696,6 +1942,13 @@ class SampleCollection(object):
 
         missing_tags = ~F("tags").contains(tags, all=True)
         match_expr = (F("tags") != None).if_else(missing_tags, True)
+
+        for label_field in label_fields:
+            _, tags_path = self._get_label_field_path(label_field, "tags")
+            if self._is_read_only_field(tags_path):
+                raise ValueError(
+                    "Cannot edit read-only field '%s'" % tags_path
+                )
 
         for label_field in label_fields:
             # We only need to process labels that are missing a tag of interest
@@ -1751,6 +2004,13 @@ class SampleCollection(object):
             label_fields = [label_fields]
 
         for label_field in label_fields:
+            _, tags_path = self._get_label_field_path(label_field, "tags")
+            if self._is_read_only_field(tags_path):
+                raise ValueError(
+                    "Cannot edit read-only field '%s'" % tags_path
+                )
+
+        for label_field in label_fields:
             # We only need to process labels that have a tag of interest
             view = self.select_labels(tags=tags, fields=label_field)
             view._untag_labels(tags, label_field)
@@ -1769,6 +2029,12 @@ class SampleCollection(object):
     def _edit_label_tags(
         self, update_fcn, label_field, ids=None, label_ids=None
     ):
+        _, tags_path = self._get_label_field_path(label_field, "tags")
+        if self._is_read_only_field(tags_path):
+            raise ValueError("Cannot edit read-only field '%s'" % tags_path)
+
+        now = datetime.utcnow()
+
         root, is_list_field = self._get_label_field_root(label_field)
         _root, is_frame_field = self._handle_frame_field(root)
 
@@ -1778,6 +2044,7 @@ class SampleCollection(object):
             id_path = root + "._id"
             tags_path = _root + ".$[label].tags"
             update = update_fcn(tags_path)
+            update["$set"] = {"last_modified_at": now}
 
             if ids is None or label_ids is None:
                 if is_frame_field:
@@ -1791,17 +2058,19 @@ class SampleCollection(object):
                 if not _label_ids:
                     continue
 
-                op = UpdateOne(
-                    {"_id": _id},
-                    update,
-                    array_filters=[{"label._id": {"$in": _label_ids}}],
+                ops.append(
+                    UpdateOne(
+                        {"_id": _id},
+                        update,
+                        array_filters=[{"label._id": {"$in": _label_ids}}],
+                    )
                 )
-                ops.append(op)
         else:
             _id_path = _root + "._id"
             id_path = root + "._id"
             tags_path = _root + ".tags"
             update = update_fcn(tags_path)
+            update["$set"] = {"last_modified_at": now}
 
             if label_ids is None:
                 if is_frame_field:
@@ -2230,6 +2499,9 @@ class SampleCollection(object):
         if field is None:
             field = self.get_field(field_name)
 
+        if field is not None and field.read_only:
+            raise ValueError("Cannot edit read-only field '%s'" % field_name)
+
         _field_name, _, list_fields, _, id_to_str = self._parse_field_name(
             field_name, omit_terminal_lists=True, allow_missing=_allow_missing
         )
@@ -2385,6 +2657,9 @@ class SampleCollection(object):
 
         if field is None:
             field = self.get_field(field_name)
+
+        if field is not None and field.read_only:
+            raise ValueError("Cannot edit read-only field '%s'" % field_name)
 
         _field_name, is_frame_field, _, _, id_to_str = self._parse_field_name(
             field_name, omit_terminal_lists=True
@@ -2735,6 +3010,11 @@ class SampleCollection(object):
         frames=False,
         progress=False,
     ):
+        if self._is_read_only_field(field_name):
+            raise ValueError("Cannot edit read-only field '%s'" % field_name)
+
+        now = datetime.utcnow()
+
         ops = []
         for _id, value in zip(ids, values):
             if value is None and skip_none:
@@ -2748,7 +3028,12 @@ class SampleCollection(object):
                     field_name, field, value, validate=validate
                 )
 
-            ops.append(UpdateOne({"_id": _id}, {"$set": {field_name: value}}))
+            ops.append(
+                UpdateOne(
+                    {"_id": _id},
+                    {"$set": {field_name: value, "last_modified_at": now}},
+                )
+            )
 
         if ops:
             self._dataset._bulk_write(
@@ -2768,6 +3053,11 @@ class SampleCollection(object):
         frames=False,
         progress=False,
     ):
+        if self._is_read_only_field(field_name):
+            raise ValueError("Cannot edit read-only field '%s'" % field_name)
+
+        now = datetime.utcnow()
+
         root = list_field
         leaf = field_name[len(root) + 1 :]
         elem_id = root + "._id"
@@ -2804,7 +3094,7 @@ class SampleCollection(object):
                 ops.append(
                     UpdateOne(
                         {"_id": _id, elem_id: _elem_id},
-                        {"$set": {elem: value}},
+                        {"$set": {elem: value, "last_modified_at": now}},
                     )
                 )
 
@@ -2825,6 +3115,11 @@ class SampleCollection(object):
         frames=False,
         progress=False,
     ):
+        if self._is_read_only_field(field_name):
+            raise ValueError("Cannot edit read-only field '%s'" % field_name)
+
+        now = datetime.utcnow()
+
         root = list_field
         leaf = field_name[len(root) + 1 :]
         path = root + ".$[label]." + leaf
@@ -2845,7 +3140,7 @@ class SampleCollection(object):
             ops.append(
                 UpdateOne(
                     {"_id": _id},
-                    {"$set": {path: value}},
+                    {"$set": {path: value, "last_modified_at": now}},
                     array_filters=[{"label._id": ObjectId(label_id)}],
                 )
             )
@@ -2856,11 +3151,16 @@ class SampleCollection(object):
             )
 
     def _set_labels(self, field_name, sample_ids, label_docs, progress=False):
+        if self._is_read_only_field(field_name):
+            raise ValueError("Cannot edit read-only field '%s'" % field_name)
+
         if self._is_group_field(field_name):
             raise ValueError(
                 "This method does not support setting attached group fields "
                 "(found: '%s')" % field_name
             )
+
+        now = datetime.utcnow()
 
         root, is_list_field = self._get_label_field_root(field_name)
         field_name, is_frame_field = self._handle_frame_field(field_name)
@@ -2886,7 +3186,7 @@ class SampleCollection(object):
                     ops.append(
                         UpdateOne(
                             {"_id": _id, elem_id: doc["_id"]},
-                            {"$set": {set_path: doc}},
+                            {"$set": {set_path: doc, "last_modified_at": now}},
                         )
                     )
         else:
@@ -2900,7 +3200,7 @@ class SampleCollection(object):
                 ops.append(
                     UpdateOne(
                         {"_id": _id, elem_id: doc["_id"]},
-                        {"$set": {field_name: doc}},
+                        {"$set": {field_name: doc, "last_modified_at": now}},
                     )
                 )
 
@@ -3147,8 +3447,8 @@ class SampleCollection(object):
                 patches before extracting them, in ``[-1, inf)``. If provided,
                 the length and width of the box are expanded (or contracted,
                 when ``alpha < 0``) by ``(100 * alpha)%``. For example, set
-                ``alpha = 1.1`` to expand the boxes by 10%, and set
-                ``alpha = 0.9`` to contract the boxes by 10%
+                ``alpha = 0.1`` to expand the boxes by 10%, and set
+                ``alpha = -0.1`` to contract the boxes by 10%
             handle_missing ("skip"): how to handle images with no patches.
                 Supported values are:
 
@@ -4977,6 +5277,7 @@ class SampleCollection(object):
         min_distance=None,
         max_distance=None,
         query=None,
+        create_index=True,
     ):
         """Sorts the samples in the collection by their proximity to a
         specified geolocation.
@@ -5059,6 +5360,8 @@ class SampleCollection(object):
             query (None): an optional dict defining a
                 `MongoDB read query <https://docs.mongodb.com/manual/tutorial/query-documents/#read-operations-query-argument>`_
                 that samples must match in order to be included in this view
+            create_index (True): whether to create the required spherical
+                index, if necessary
 
         Returns:
             a :class:`fiftyone.core.view.DatasetView`
@@ -5070,11 +5373,18 @@ class SampleCollection(object):
                 min_distance=min_distance,
                 max_distance=max_distance,
                 query=query,
+                create_index=create_index,
             )
         )
 
     @view_stage
-    def geo_within(self, boundary, location_field=None, strict=True):
+    def geo_within(
+        self,
+        boundary,
+        location_field=None,
+        strict=True,
+        create_index=True,
+    ):
         """Filters the samples in this collection to only include samples whose
         geolocation is within a specified boundary.
 
@@ -5120,13 +5430,18 @@ class SampleCollection(object):
             strict (True): whether a sample's location data must strictly fall
                 within boundary (True) in order to match, or whether any
                 intersection suffices (False)
+            create_index (True): whether to create the required spherical
+                index, if necessary
 
         Returns:
             a :class:`fiftyone.core.view.DatasetView`
         """
         return self._add_view_stage(
             fos.GeoWithin(
-                boundary, location_field=location_field, strict=strict
+                boundary,
+                location_field=location_field,
+                strict=strict,
+                create_index=create_index,
             )
         )
 
@@ -7239,11 +7554,13 @@ class SampleCollection(object):
 
         ``None``-valued fields are ignored.
 
-        This aggregation is typically applied to *numeric* field types (or
-        lists of such types):
+        This aggregation is typically applied to *numeric* or *date* field
+        types (or lists of such types):
 
         -   :class:`fiftyone.core.fields.IntField`
         -   :class:`fiftyone.core.fields.FloatField`
+        -   :class:`fiftyone.core.fields.DateField`
+        -   :class:`fiftyone.core.fields.DateTimeField`
 
         Examples::
 
@@ -7279,7 +7596,7 @@ class SampleCollection(object):
             print(bounds)  # (min, max)
 
             #
-            # Compute the a bounds of a numeric list field
+            # Compute the bounds of a numeric list field
             #
 
             bounds = dataset.bounds("numeric_list_field")
@@ -7409,6 +7726,22 @@ class SampleCollection(object):
         Returns:
             the count
         """
+
+        # Optimization: use estimated document count when possible
+        if self._is_full_collection() and (
+            expr is None
+            and (
+                field_or_expr is None
+                or (
+                    etau.is_str(field_or_expr)
+                    and field_or_expr == "frames"
+                    and self._has_frame_fields()
+                )
+            )
+        ):
+            frames = field_or_expr == "frames"
+            return self._dataset._estimated_count(frames=frames)
+
         make = lambda field_or_expr: foa.Count(
             field_or_expr, expr=expr, safe=safe
         )
@@ -7715,6 +8048,174 @@ class SampleCollection(object):
         """
         make = lambda field_or_expr: foa.HistogramValues(
             field_or_expr, expr=expr, bins=bins, range=range, auto=auto
+        )
+        return self._make_and_aggregate(make, field_or_expr)
+
+    @aggregation
+    def min(self, field_or_expr, expr=None, safe=False):
+        """Computes the minimum of a numeric field of the collection.
+
+        ``None``-valued fields are ignored.
+
+        This aggregation is typically applied to *numeric* or *date* field
+        types (or lists of such types):
+
+        -   :class:`fiftyone.core.fields.IntField`
+        -   :class:`fiftyone.core.fields.FloatField`
+        -   :class:`fiftyone.core.fields.DateField`
+        -   :class:`fiftyone.core.fields.DateTimeField`
+
+        Examples::
+
+            import fiftyone as fo
+            from fiftyone import ViewField as F
+
+            dataset = fo.Dataset()
+            dataset.add_samples(
+                [
+                    fo.Sample(
+                        filepath="/path/to/image1.png",
+                        numeric_field=1.0,
+                        numeric_list_field=[1, 2, 3],
+                    ),
+                    fo.Sample(
+                        filepath="/path/to/image2.png",
+                        numeric_field=4.0,
+                        numeric_list_field=[1, 2],
+                    ),
+                    fo.Sample(
+                        filepath="/path/to/image3.png",
+                        numeric_field=None,
+                        numeric_list_field=None,
+                    ),
+                ]
+            )
+
+            #
+            # Compute the minimum of a numeric field
+            #
+
+            min = dataset.min("numeric_field")
+            print(min)  # the min
+
+            #
+            # Compute the minimum of a numeric list field
+            #
+
+            min = dataset.min("numeric_list_field")
+            print(min)  # the min
+
+            #
+            # Compute the minimum of a transformation of a numeric field
+            #
+
+            min = dataset.min(2 * (F("numeric_field") + 1))
+            print(min)  # the min
+
+        Args:
+            field_or_expr: a field name, ``embedded.field.name``,
+                :class:`fiftyone.core.expressions.ViewExpression`, or
+                `MongoDB expression <https://docs.mongodb.com/manual/meta/aggregation-quick-reference/#aggregation-expressions>`_
+                defining the field or expression to aggregate. This can also
+                be a list or tuple of such arguments, in which case a tuple of
+                corresponding aggregation results (each receiving the same
+                additional keyword arguments, if any) will be returned
+            expr (None): a :class:`fiftyone.core.expressions.ViewExpression` or
+                `MongoDB expression <https://docs.mongodb.com/manual/meta/aggregation-quick-reference/#aggregation-expressions>`_
+                to apply to ``field_or_expr`` (which must be a field) before
+                aggregating
+            safe (False): whether to ignore nan/inf values when dealing with
+                floating point values
+
+        Returns:
+            the minimum value
+        """
+        make = lambda field_or_expr: foa.Min(
+            field_or_expr, expr=expr, safe=safe
+        )
+        return self._make_and_aggregate(make, field_or_expr)
+
+    @aggregation
+    def max(self, field_or_expr, expr=None, safe=False):
+        """Computes the maximum of a numeric field of the collection.
+
+        ``None``-valued fields are ignored.
+
+        This aggregation is typically applied to *numeric* or *date* field
+        types (or lists of such types):
+
+        -   :class:`fiftyone.core.fields.IntField`
+        -   :class:`fiftyone.core.fields.FloatField`
+        -   :class:`fiftyone.core.fields.DateField`
+        -   :class:`fiftyone.core.fields.DateTimeField`
+
+        Examples::
+
+            import fiftyone as fo
+            from fiftyone import ViewField as F
+
+            dataset = fo.Dataset()
+            dataset.add_samples(
+                [
+                    fo.Sample(
+                        filepath="/path/to/image1.png",
+                        numeric_field=1.0,
+                        numeric_list_field=[1, 2, 3],
+                    ),
+                    fo.Sample(
+                        filepath="/path/to/image2.png",
+                        numeric_field=4.0,
+                        numeric_list_field=[1, 2],
+                    ),
+                    fo.Sample(
+                        filepath="/path/to/image3.png",
+                        numeric_field=None,
+                        numeric_list_field=None,
+                    ),
+                ]
+            )
+
+            #
+            # Compute the maximum of a numeric field
+            #
+
+            max = dataset.max("numeric_field")
+            print(max)  # the max
+
+            #
+            # Compute the maximum of a numeric list field
+            #
+
+            max = dataset.max("numeric_list_field")
+            print(max)  # the max
+
+            #
+            # Compute the maximum of a transformation of a numeric field
+            #
+
+            max = dataset.max(2 * (F("numeric_field") + 1))
+            print(max)  # the max
+
+        Args:
+            field_or_expr: a field name, ``embedded.field.name``,
+                :class:`fiftyone.core.expressions.ViewExpression`, or
+                `MongoDB expression <https://docs.mongodb.com/manual/meta/aggregation-quick-reference/#aggregation-expressions>`_
+                defining the field or expression to aggregate. This can also
+                be a list or tuple of such arguments, in which case a tuple of
+                corresponding aggregation results (each receiving the same
+                additional keyword arguments, if any) will be returned
+            expr (None): a :class:`fiftyone.core.expressions.ViewExpression` or
+                `MongoDB expression <https://docs.mongodb.com/manual/meta/aggregation-quick-reference/#aggregation-expressions>`_
+                to apply to ``field_or_expr`` (which must be a field) before
+                aggregating
+            safe (False): whether to ignore nan/inf values when dealing with
+                floating point values
+
+        Returns:
+            the maximum value
+        """
+        make = lambda field_or_expr: foa.Max(
+            field_or_expr, expr=expr, safe=safe
         )
         return self._make_and_aggregate(make, field_or_expr)
 
@@ -9028,12 +9529,16 @@ class SampleCollection(object):
         """
         return list(self.get_index_information().keys())
 
-    def get_index_information(self):
+    def get_index_information(self, include_stats=False):
         """Returns a dictionary of information about the indexes on this
         collection.
 
         See :meth:`pymongo:pymongo.collection.Collection.index_information` for
         details on the structure of this dictionary.
+
+        Args:
+            include_stats (False): whether to include the size, usage, and
+                build status of each index
 
         Returns:
             a dict mapping index names to info dicts
@@ -9043,6 +9548,24 @@ class SampleCollection(object):
         # Sample-level indexes
         fields_map = self._get_db_fields_map(reverse=True)
         sample_info = self._dataset._sample_collection.index_information()
+
+        if include_stats:
+            cs = self._dataset._sample_collstats()
+            for key, size in cs["indexSizes"].items():
+                if key in sample_info:
+                    sample_info[key]["size"] = size
+
+            for key in cs.get("indexBuilds", []):
+                if key in sample_info:
+                    sample_info[key]["in_progress"] = True
+
+            for d in self._dataset._sample_collection.aggregate(
+                [{"$indexStats": {}}]
+            ):
+                key = d["name"]
+                if key in sample_info:
+                    sample_info[key]["accesses"] = d["accesses"]
+
         for key, info in sample_info.items():
             if len(info["key"]) == 1:
                 field = info["key"][0][0]
@@ -9054,6 +9577,24 @@ class SampleCollection(object):
             # Frame-level indexes
             fields_map = self._get_db_fields_map(frames=True, reverse=True)
             frame_info = self._dataset._frame_collection.index_information()
+
+            if include_stats:
+                cs = self._dataset._frame_collstats()
+                for key, size in cs["indexSizes"].items():
+                    if key in frame_info:
+                        frame_info[key]["size"] = size
+
+                for key in cs.get("indexBuilds", []):
+                    if key in frame_info:
+                        frame_info[key]["in_progress"] = True
+
+                for d in self._dataset._frame_collection.aggregate(
+                    [{"$indexStats": {}}]
+                ):
+                    key = d["name"]
+                    if key in frame_info:
+                        frame_info[key]["accesses"] = d["accesses"]
+
             for key, info in frame_info.items():
                 if len(info["key"]) == 1:
                     field = info["key"][0][0]
@@ -9063,7 +9604,7 @@ class SampleCollection(object):
 
         return index_info
 
-    def create_index(self, field_or_spec, unique=False, **kwargs):
+    def create_index(self, field_or_spec, unique=False, wait=True, **kwargs):
         """Creates an index on the given field or with the given specification,
         if necessary.
 
@@ -9097,6 +9638,7 @@ class SampleCollection(object):
                 :meth:`pymongo:pymongo.collection.Collection.create_index` for
                 supported values
             unique (False): whether to add a uniqueness constraint to the index
+            wait (True): whether to wait for index creation to finish
             **kwargs: optional keyword arguments for
                 :meth:`pymongo:pymongo.collection.Collection.create_index`
 
@@ -9175,10 +9717,17 @@ class SampleCollection(object):
             # Satisfactory index already exists
             return index_name
 
+        # Setting `w=0` sets `acknowledged=False` in pymongo
+        write_concern = None if wait else WriteConcern(w=0)
+
         if is_frame_index:
-            coll = self._dataset._frame_collection
+            coll = self._dataset._get_frame_collection(
+                write_concern=write_concern
+            )
         else:
-            coll = self._dataset._sample_collection
+            coll = self._dataset._get_sample_collection(
+                write_concern=write_concern
+            )
 
         name = coll.create_index(index_spec, unique=unique, **kwargs)
 
@@ -9190,7 +9739,7 @@ class SampleCollection(object):
         return name
 
     def drop_index(self, field_or_name):
-        """Drops the index for the given field or name.
+        """Drops the index for the given field or name, if necessary.
 
         Args:
             field_or_name: a field name, ``embedded.field.name``, or compound
@@ -9222,23 +9771,29 @@ class SampleCollection(object):
             else:
                 index_map[key] = key
 
-        if name not in index_map:
-            itype = "frame index" if is_frame_index else "index"
-            raise ValueError(
-                "%s has no %s '%s'" % (self.__class__.__name__, itype, name)
-            )
-
-        coll.drop_index(index_map[name])
+        if name in index_map:
+            coll.drop_index(index_map[name])
 
     def _get_default_indexes(self, frames=False):
         if frames:
             if self._has_frame_fields():
-                return ["id", "_sample_id_1_frame_number_1"]
+                return [
+                    "id",
+                    "created_at",
+                    "last_modified_at",
+                    "_sample_id_1_frame_number_1",
+                ]
 
             return []
 
         if self._is_patches:
-            names = ["id", "filepath", "sample_id"]
+            names = [
+                "id",
+                "filepath",
+                "created_at",
+                "last_modified_at",
+                "sample_id",
+            ]
             if self._is_frames:
                 names.extend(["frame_id", "_sample_id_1_frame_number_1"])
 
@@ -9248,18 +9803,38 @@ class SampleCollection(object):
             return [
                 "id",
                 "filepath",
+                "created_at",
+                "last_modified_at",
                 "sample_id",
                 "_sample_id_1_frame_number_1",
             ]
 
         if self._is_clips:
-            return ["id", "filepath", "sample_id"]
+            return [
+                "id",
+                "filepath",
+                "created_at",
+                "last_modified_at",
+                "sample_id",
+            ]
 
         if self.media_type == fom.GROUP:
             gf = self.group_field
-            return ["id", "filepath", gf + ".id", gf + ".name"]
+            return [
+                "id",
+                "filepath",
+                "created_at",
+                "last_modified_at",
+                gf + ".id",
+                gf + ".name",
+            ]
 
-        return ["id", "filepath"]
+        return [
+            "id",
+            "filepath",
+            "created_at",
+            "last_modified_at",
+        ]
 
     def reload(self):
         """Reloads the collection from the database."""
@@ -10043,6 +10618,22 @@ class SampleCollection(object):
     def _handle_id_fields(self, field_name):
         return _handle_id_fields(self, field_name)
 
+    def _is_full_collection(self):
+        if isinstance(self, fod.Dataset) and self.media_type != fom.GROUP:
+            return True
+
+        # pylint:disable=no-member
+        if (
+            isinstance(self, fov.DatasetView)
+            and self._dataset.media_type == fom.GROUP
+            and len(self._stages) == 1
+            and isinstance(self._stages[0], fos.SelectGroupSlices)
+            and self._pipeline() == []
+        ):
+            return True
+
+        return False
+
     def _is_label_field(self, field_name, label_type_or_types):
         try:
             label_type = self._get_label_field_type(field_name)
@@ -10132,9 +10723,7 @@ class SampleCollection(object):
         db_fields_map = self._get_db_fields_map(frames=frames)
         return [db_fields_map.get(p, p) for p in paths]
 
-    def _get_media_fields(
-        self, include_filepath=True, whitelist=None, frames=False
-    ):
+    def _get_media_fields(self, whitelist=None, blacklist=None, frames=False):
         media_fields = {}
 
         if frames:
@@ -10144,13 +10733,13 @@ class SampleCollection(object):
             schema = self.get_field_schema(flat=True)
             app_media_fields = set(self._dataset.app_config.media_fields)
 
-            if include_filepath:
-                # 'filepath' should already be in set, but add it just in case
-                app_media_fields.add("filepath")
-            else:
-                app_media_fields.discard("filepath")
+            # 'filepath' should already be in set, but add it just in case
+            app_media_fields.add("filepath")
 
         for field_name, field in schema.items():
+            while isinstance(field, fof.ListField):
+                field = field.field
+
             if field_name in app_media_fields:
                 media_fields[field_name] = None
             elif isinstance(field, fof.EmbeddedDocumentField) and issubclass(
@@ -10165,14 +10754,28 @@ class SampleCollection(object):
                 whitelist = {whitelist}
 
             media_fields = {
-                k: v for k, v in media_fields.items() if k in whitelist
+                k: v
+                for k, v in media_fields.items()
+                if any(w == k or k.startswith(w + ".") for w in whitelist)
+            }
+
+        if blacklist is not None:
+            if etau.is_container(blacklist):
+                blacklist = set(blacklist)
+            else:
+                blacklist = {blacklist}
+
+            media_fields = {
+                k: v
+                for k, v in media_fields.items()
+                if not any(w == k or k.startswith(w + ".") for w in blacklist)
             }
 
         return media_fields
 
-    def _resolve_media_field(self, media_field):
+    def _parse_media_field(self, media_field):
         if media_field in self._dataset.app_config.media_fields:
-            return media_field
+            return media_field, None
 
         _media_field, is_frame_field = self._handle_frame_field(media_field)
 
@@ -10181,12 +10784,20 @@ class SampleCollection(object):
             if leaf is not None:
                 leaf = root + "." + leaf
 
-            if _media_field in (root, leaf):
+            if _media_field in (root, leaf) or root.startswith(
+                _media_field + "."
+            ):
                 _resolved_field = leaf if leaf is not None else root
                 if is_frame_field:
                     _resolved_field = self._FRAMES_PREFIX + _resolved_field
 
-                return _resolved_field
+                _list_fields = self._parse_field_name(
+                    _resolved_field, auto_unwind=False
+                )[-2]
+                if _list_fields:
+                    return _resolved_field, _list_fields[0]
+
+                return _resolved_field, None
 
         raise ValueError("'%s' is not a valid media field" % media_field)
 
@@ -10421,6 +11032,24 @@ class SampleCollection(object):
                 values_map[_id] = _val
 
         return [values_map.get(i, None) for i in ids]
+
+    def _has_stores(self):
+        dataset_id = self._root_dataset._doc.id
+        svc = foos.ExecutionStoreService(dataset_id=dataset_id)
+        return svc.count_stores() > 0
+
+    def _list_stores(self):
+        dataset_id = self._root_dataset._doc.id
+        svc = foos.ExecutionStoreService(dataset_id=dataset_id)
+        return svc.list_stores()
+
+    def _get_store(self, store_name):
+        dataset_id = self._root_dataset._doc.id
+        svc = foos.ExecutionStoreService(dataset_id=dataset_id)
+        if not svc.has_store(store_name):
+            raise ValueError(f"Dataset has no store '{store_name}'")
+
+        return foos.ExecutionStore(store_name, svc)
 
 
 def _iter_label_fields(sample_collection):
@@ -10817,6 +11446,8 @@ def _parse_values_dict(sample_collection, key_field, values):
 
 
 def _parse_frame_values_dicts(sample_collection, sample_ids, values):
+    now = datetime.utcnow()
+
     value = _get_non_none_value(values)
     if not isinstance(value, dict):
         return None, values
@@ -10840,7 +11471,13 @@ def _parse_frame_values_dicts(sample_collection, sample_ids, values):
             id_map[(_id, fn)] = _fid
 
         for fn in set(_vals.keys()) - set(_fns):
-            dicts.append({"_sample_id": ObjectId(_id), "frame_number": fn})
+            dicts.append(
+                {
+                    "_sample_id": ObjectId(_id),
+                    "frame_number": fn,
+                    "last_modified_at": now,
+                }
+            )
 
     # Insert frame documents for new frame numbers
     if dicts:
